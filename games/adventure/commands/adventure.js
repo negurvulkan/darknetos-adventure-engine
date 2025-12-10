@@ -1,6 +1,10 @@
 // Adventure command registration for the terminal router.
 import adventure from '../engine/core.js';
 
+if (typeof window !== 'undefined') {
+  window.darknetAdventure = adventure;
+}
+
 function ensureGameRegistered() {
   if (typeof registerGame === 'function') {
     registerGame('adventure', {
