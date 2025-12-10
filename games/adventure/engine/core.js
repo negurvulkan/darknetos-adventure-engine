@@ -4,7 +4,7 @@ import { loadJson, loadAscii } from './loader.js';
 import { runEvents } from './events.js';
 import { startCombat, handleCombatAction } from './combat.js';
 
-const DATA_ROOT = 'games/adventure/data';
+const DATA_ROOT = './js/games/adventure/data';
 const SAVE_PREFIX = 'darkadv_';
 
 const defaultStats = { hp: 12, attack: 2, defense: 1 };
