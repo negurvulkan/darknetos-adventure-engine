@@ -28,6 +28,16 @@ const state = {
   lockedExits: {}
 };
 
+let adventureActive = false;
+
+function isActive() {
+  return adventureActive;
+}
+
+function deactivate() {
+  adventureActive = false;
+}
+
 function getSaveKey() {
   if (typeof getUserName === 'function') {
     return `${SAVE_PREFIX}${getUserName()}`;
@@ -333,6 +343,7 @@ function printHelp() {
 export const adventure = {
   async start() {
     await ensureWorldLoaded();
+    adventureActive = true; // <— NEU
     state.location = cache.world.startRoom;
     state.inventory = [];
     state.flags = clone(cache.world.globalFlags || {});
@@ -347,6 +358,7 @@ export const adventure = {
   },
   async continue() {
     await ensureWorldLoaded();
+    adventureActive = true; // <— NEU
     const loaded = loadStateFromSave();
     if (!loaded) {
       printLines(['Kein Spielstand gefunden. Starte neu.']);
@@ -358,6 +370,7 @@ export const adventure = {
   },
   async reset() {
     clearSave();
+    
     await adventure.start();
   },
   async handleInput(text) {
@@ -370,7 +383,12 @@ export const adventure = {
   help: printHelp,
   getState: () => state,
   getWorld: () => cache.world,
-  dataRoot: DATA_ROOT
+  dataRoot: DATA_ROOT,
+  isActive,            
+  exit: () => {        
+    deactivate();
+    printLines(['Du verlässt das Adventure und kehrst ins Darknetz-Terminal zurück.', ''], 'dim');
+  }
 };
 
 export default adventure;
