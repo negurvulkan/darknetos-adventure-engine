@@ -2,6 +2,24 @@
 // TERMINAL – TAB-Autocomplete & Command Handler
 // ---------------------------------------------------------
 
+// ---------------------------------------------------------
+// Globale Registry für externe Befehle (z. B. Adventure)
+// ---------------------------------------------------------
+if (typeof window !== "undefined") {
+  window.EXT_COMMANDS = window.EXT_COMMANDS || {};
+
+  window.registerCommand = function(name, handler) {
+    if (typeof name !== "string" || !name.trim()) return;
+    if (typeof handler !== "function") return;
+    window.EXT_COMMANDS[name] = handler;
+  };
+
+  // Optionaler Router für Module, die ein Router-Objekt erwarten
+  window.commandRouter = window.commandRouter || {
+    registerCommand: (name, handler) => window.registerCommand(name, handler)
+  };
+}
+
 // TAB-Autocomplete
 function tabComplete() {
   const value = inputEl.value;
@@ -144,7 +162,21 @@ async function handleCommand(raw) {
 
   const parts = cmd.split(" ").filter(Boolean);
   const base  = parts[0];
-  const arg   = parts[1] || "";
+  const args  = parts.slice(1);
+  const arg   = args[0] || "";
+
+  // ---------------------------------------------------------
+  // Externe Commands (z. B. Adventure)
+  // ---------------------------------------------------------
+  if (
+    typeof window !== "undefined" &&
+    window.EXT_COMMANDS &&
+    window.EXT_COMMANDS[base]
+  ) {
+    const handler = window.EXT_COMMANDS[base];
+    await handler(args);
+    return;
+  }
 
   // ---------------------------------------------------------
   // TicTacToe: Schnellzug (nur eine Zahl 1–9 eingeben)
