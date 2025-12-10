@@ -213,10 +213,13 @@ async function performTake(action) {
 
 async function performInspect(action) {
   const room = await loadRoom(state.location);
+
+  // Kein Objekt angegeben → Umgebung / Raumbeschreibung erneut anzeigen
   if (!action.object) {
-    printLines([cache.world.messages.unknownCommand]);
+    await showRoom(false);
     return;
   }
+
   const objId = (action.object || '').replace(/\s+/g, '_');
   const candidates = (room.objects || []).concat(room.items || []);
   const match = candidates.find((id) => id.toLowerCase().includes(objId));
