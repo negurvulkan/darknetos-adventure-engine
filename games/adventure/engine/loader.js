@@ -1,7 +1,7 @@
 // Adventure loader utilities
 // Responsible for loading JSON assets and ASCII art for the adventure module.
 
-const DATA_ROOT = 'games/adventure/data';
+const DATA_ROOT = './js/games/adventure/data';
 
 /**
  * Load a JSON file relative to the adventure data root.
