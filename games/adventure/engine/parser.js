@@ -12,7 +12,7 @@ const VERB_SYNONYMS = {
   pull: ['ziehe', 'pull'],
   attack: ['angriff', 'angreifen', 'attack', 'schlag', 'kämpfe', 'kaempfe'],
   combine: ['kombiniere', 'combine'],
-  inventory: ['inventar', 'tasche', 'beutel'],
+  inventory: ['inventar', 'tasche', 'beutel', 'i', 'inv', 'rucksack'],
   help: ['hilfe', 'help']
 };
 
