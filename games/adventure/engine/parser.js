@@ -50,6 +50,38 @@ function parseDirection(word) {
 export function parseInput(text) {
   const raw = text;
   const lower = text.trim().toLowerCase();
+
+  // Leerer String
+  if (!lower) {
+    return { verb: null, object: null, target: null, direction: null, raw };
+  }
+
+  // Spezialfall: "benutze X mit Y" / "nutze X mit Y" / "verwende X mit Y" / "use X with Y"
+  const combineMatch =
+    lower.match(/^(benutze|nutze|verwende)\s+(.+?)\s+mit\s+(.+)$/) ||
+    lower.match(/^use\s+(.+?)\s+with\s+(.+)$/);
+
+  if (combineMatch) {
+    // bei den deutschen Varianten: group 2 = Objekt, 3 = Ziel
+    if (combineMatch[1] !== 'use') {
+      return {
+        verb: 'combine',
+        object: combineMatch[2].trim(),
+        target: combineMatch[3].trim(),
+        direction: null,
+        raw
+      };
+    }
+    // englische "use X with Y"
+    return {
+      verb: 'combine',
+      object: combineMatch[1] ? combineMatch[1].trim() : combineMatch[2].trim(),
+      target: combineMatch[2] ? combineMatch[2].trim() : combineMatch[3].trim(),
+      direction: null,
+      raw
+    };
+  }
+
   const tokens = lower.split(/\s+/);
 
   // Direction short-cuts
@@ -67,7 +99,9 @@ export function parseInput(text) {
 
   // combine has special pattern "kombiniere X mit Y"
   if (verb === 'combine') {
-    const match = lower.match(/kombiniere\s+(.+?)\s+mit\s+(.+)/) || lower.match(/combine\s+(.+?)\s+with\s+(.+)/);
+    const match =
+      lower.match(/kombiniere\s+(.+?)\s+mit\s+(.+)/) ||
+      lower.match(/combine\s+(.+?)\s+with\s+(.+)/);
     if (match) {
       object = match[1].trim();
       target = match[2].trim();
