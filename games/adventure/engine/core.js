@@ -366,6 +366,9 @@ async function handleAction(action) {
     case 'help':
       printHelp();
       break;
+    case 'exit':
+      adventure.exit();
+      break;
     case 'attack':
       await handleCombatAction(action, state, ctxForEvents());
       break;
@@ -377,12 +380,13 @@ async function handleAction(action) {
 function printHelp() {
   advLog([
     'Adventure-Befehle:',
-    '- adv start | adv continue | adv reset',
+    '- adv start | adv continue | adv reset | adv exit',
     '- Bewegung: geh nord/ost/sued/west oder n/s/o/w',
     '- nimm <item>, untersuche <objekt>',
     '- benutze <objekt|item>',
     '- kombiniere <item> mit <anderes>',
-    '- inventar, hilfe'
+    '- inventar, hilfe',
+    '- exit oder quit beendet das Adventure'
   ]);
 }
 

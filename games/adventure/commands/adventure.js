@@ -25,6 +25,7 @@ function printCommandHelp() {
     'adv start     - Neues Abenteuer starten',
     'adv continue  - Letzten Spielstand laden',
     'adv reset     - Spielstand zurücksetzen',
+    'adv exit      - Adventure beenden',
     'adv help      - Diese Hilfe',
     'Während des Adventures werden Eingaben direkt interpretiert.'
   ]);
@@ -42,6 +43,10 @@ async function handleAdvCommand(args = []) {
       break;
     case 'reset':
       await adventure.reset();
+      break;
+    case 'exit':
+    case 'quit':
+      adventure.exit();
       break;
     case 'help':
     default:

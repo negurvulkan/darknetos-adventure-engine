@@ -13,7 +13,8 @@ const VERB_SYNONYMS = {
   attack: ['angriff', 'angreifen', 'attack', 'schlag', 'kämpfe', 'kaempfe'],
   combine: ['kombiniere', 'combine'],
   inventory: ['inventar', 'tasche', 'beutel', 'i', 'inv', 'rucksack'],
-  help: ['hilfe', 'help']
+  help: ['hilfe', 'help'],
+  exit: ['exit', 'quit', 'beenden', 'verlassen']
 };
 
 const DIRECTION_ALIASES = {
