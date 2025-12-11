@@ -119,6 +119,17 @@ function clearSave() {
   localStorage.removeItem(getSaveKey());
 }
 
+function normalizeId(str) {
+  return (str || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/ä/g, "ae")
+    .replace(/ö/g, "oe")
+    .replace(/ü/g, "ue")
+    .replace(/ß/g, "ss");
+}
+
 function describeInventory() {
   if (!state.inventory.length) {
     printLines(['Dein Inventar ist leer.']);
