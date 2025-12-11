@@ -304,6 +304,20 @@ function buildChain(events, workspace) {
   return { start, end: prev };
 }
 
+function normalizeEventsInput(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.warn('Event JSON konnte nicht geparst werden:', e);
+      return [];
+    }
+  }
+  return [];
+}
+
 export function initEventBlockEditor(domElement, initialJsonArray = []) {
   registerBlocks();
   const workspace = Blockly.inject(domElement, {
@@ -330,8 +344,10 @@ export function initEventBlockEditor(domElement, initialJsonArray = []) {
     Blockly.Events.disable();
     try {
       workspace.clear();
-      const chain = buildChain(jsonArray || [], workspace);
+      const normalized = normalizeEventsInput(jsonArray);
+      const chain = buildChain(normalized, workspace);
       if (chain.start) chain.start.moveBy(10, 10);
+      if (Blockly?.svgResize) Blockly.svgResize(workspace);
     } finally {
       Blockly.Events.enable();
     }
