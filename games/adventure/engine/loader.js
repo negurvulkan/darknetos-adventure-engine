@@ -17,25 +17,35 @@ export async function loadJson(path) {
 }
 
 /**
- * Load and render ASCII art in the output terminal.
- * Uses a <pre> element to preserve monospace layout and allows font scaling.
- * @param {{file: string, fontSize?: number}} param0 
+ * Load and render ASCII art in the adventure UI when available.
+ * Falls back to printing directly into the terminal output.
+ * @param {{file?: string, fontSize?: number} | string} asciiConfig
  */
-export async function loadAscii({ file, fontSize }) {
+export async function loadAscii(asciiConfig) {
+  const file = typeof asciiConfig === 'string' ? asciiConfig : asciiConfig.file;
+  const fontSize = typeof asciiConfig === 'object' ? asciiConfig.fontSize : undefined;
   const url = `${DATA_ROOT}/${file}`;
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`ASCII konnte nicht geladen werden: ${url}`);
   }
   const text = await res.text();
-  const size = fontSize || 6;
+
+  if (typeof window !== 'undefined' && window.advAsciiEl) {
+    window.advAsciiEl.textContent = text;
+    if (fontSize) {
+      window.advAsciiEl.style.fontSize = `${fontSize}px`;
+    }
+    return text;
+  }
 
   if (typeof document !== 'undefined' && typeof outputEl !== 'undefined') {
     const pre = document.createElement('pre');
     pre.textContent = text;
     pre.style.fontFamily = 'monospace';
-    pre.style.fontSize = `${size}px`;
-    pre.style.lineHeight = '1.1';
+    if (fontSize) {
+      pre.style.fontSize = `${fontSize}px`;
+    }
     pre.classList.add('adventure-ascii');
     outputEl.appendChild(pre);
     outputEl.scrollTop = outputEl.scrollHeight;

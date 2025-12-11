@@ -3,6 +3,14 @@ import { parseInput } from './parser.js';
 import { loadJson, loadAscii } from './loader.js';
 import { runEvents } from './events.js';
 import { startCombat, handleCombatAction } from './combat.js';
+import {
+  advLog,
+  clearAdventureUI,
+  ensureAdventureUI,
+  renderRoomContent,
+  renderStatus,
+  setAsciiContent
+} from './ui.js';
 
 const DATA_ROOT = './js/games/adventure/data';
 const SAVE_PREFIX = 'darkadv_';
@@ -131,25 +139,34 @@ function normalizeId(str) {
 }
 
 function describeInventory() {
+  ensureAdventureUI();
   if (!state.inventory.length) {
-    printLines(['Dein Inventar ist leer.']);
+    advLog(['Dein Inventar ist leer.']);
     return;
   }
   const lines = ['Inventar:'];
   state.inventory.forEach((id) => lines.push(`- ${id}`));
-  printLines(lines);
+  advLog(lines);
 }
 
 async function showRoom(firstTime = false) {
+  ensureAdventureUI();
   const room = await loadRoom(state.location);
   state.visited[room.id] = true;
 
   if (room.ascii) {
     await loadAscii(room.ascii);
+  } else {
+    setAsciiContent('');
   }
 
-  const lines = [room.title, room.description];
+  const lines = [];
+  lines.push(room.title);
+  lines.push('');
+  lines.push(room.description);
+
   if (room.items && room.items.length) {
+    lines.push('');
     lines.push('Hier siehst du: ' + room.items.map((i) => `"${i}"`).join(', '));
   }
   if (room.objects && room.objects.length) {
@@ -159,7 +176,9 @@ async function showRoom(firstTime = false) {
   if (exits.length) {
     lines.push('Ausgänge: ' + exits.join(', '));
   }
-  printLines(lines);
+
+  renderRoomContent(lines);
+  renderStatus(state);
 
   const events = firstTime && room.on_first_enter ? room.on_first_enter : room.on_enter;
   if (Array.isArray(events) && events.length) {
@@ -183,11 +202,11 @@ async function performMove(action) {
   const lockKey = `${room.id}:${direction}`;
 
   if (!dest) {
-    printLines([cache.world.messages.cannotGo]);
+    advLog([cache.world.messages.cannotGo]);
     return;
   }
   if (state.lockedExits[lockKey]) {
-    printLines(['Der Weg ist versperrt.']);
+    advLog(['Der Weg ist versperrt.']);
     return;
   }
 
@@ -199,7 +218,7 @@ async function performMove(action) {
 async function performTake(action) {
     const room = await loadRoom(state.location);
     if (!action.object) {
-      printLines([cache.world.messages.unknownCommand]);
+      advLog([cache.world.messages.unknownCommand]);
       return;
     }
   const rawObj = (action.object || '').toLowerCase();
@@ -212,26 +231,26 @@ async function performTake(action) {
   if (!match) {
     match = available.find(id => id.toLowerCase().includes(rawObj));
   }
-  
+
   if (!match) {
-    printLines([cache.world.messages.cannotTake]);
+    advLog([cache.world.messages.cannotTake]);
     return;
   }
 
   if (!match) {
-    printLines([cache.world.messages.cannotTake]);
+    advLog([cache.world.messages.cannotTake]);
     return;
   }
   const item = await loadItem(match);
   if (!item.pickup) {
-    printLines(['Das lässt sich nicht mitnehmen.']);
+    advLog(['Das lässt sich nicht mitnehmen.']);
     return;
   }
   room.items = available.filter((i) => i !== match);
   if (!state.inventory.includes(item.id)) {
     state.inventory.push(item.id);
   }
-  printLines([`Du nimmst ${item.name}.`]);
+  advLog([`Du nimmst ${item.name}.`]);
   saveState();
 }
 
@@ -248,25 +267,25 @@ async function performInspect(action) {
   const candidates = (room.objects || []).concat(room.items || []);
   const match = candidates.find((id) => id.toLowerCase().includes(objId));
   if (!match) {
-    printLines(['Nichts Besonderes.']);
+    advLog(['Nichts Besonderes.']);
     return;
   }
 
   if (room.objects.includes(match)) {
     const obj = await loadObject(match);
     const lines = [`${obj.name}: ${obj.description}`];
-    printLines(lines);
+    advLog(lines);
     await runEvents(obj.inspect || [], state, ctxForEvents());
   } else if (room.items.includes(match) || state.inventory.includes(match)) {
     const item = await loadItem(match);
-    printLines([`${item.name}: ${item.description}`]);
+    advLog([`${item.name}: ${item.description}`]);
   }
 }
 
 async function performUse(action) {
   const room = await loadRoom(state.location);
   if (!action.object) {
-    printLines([cache.world.messages.unknownCommand]);
+    advLog([cache.world.messages.unknownCommand]);
     return;
   }
   const id = (action.object || '').replace(/\s+/g, '_');
@@ -286,7 +305,7 @@ async function performUse(action) {
     await runEvents(item.on_use || [], state, ctxForEvents());
     return;
   }
-  printLines([cache.world.messages.unknownCommand]);
+  advLog([cache.world.messages.unknownCommand]);
 }
 
 async function performCombine(action) {
@@ -294,13 +313,13 @@ async function performCombine(action) {
   const targetId = (action.target || '').replace(/\s+/g, '_');
   const match = state.inventory.find((i) => i.toLowerCase().includes(sourceId));
   if (!match) {
-    printLines(['Dir fehlt ein benötigtes Item.']);
+    advLog(['Dir fehlt ein benötigtes Item.']);
     return;
   }
   const item = await loadItem(match);
   const combination = item.combine ? item.combine[targetId] : null;
   if (!combination) {
-    printLines(['Das lässt sich nicht kombinieren.']);
+    advLog(['Das lässt sich nicht kombinieren.']);
     return;
   }
   await runEvents(combination, state, ctxForEvents());
@@ -308,14 +327,14 @@ async function performCombine(action) {
 
 async function handleAction(action) {
   if (!action || !action.verb) {
-    printLines([cache.world.messages.unknownCommand]);
+    advLog([cache.world.messages.unknownCommand]);
     return;
   }
 
   if (state.inCombat) {
     const handled = await handleCombatAction(action, state, ctxForEvents());
     if (!handled) {
-      printLines(['Kampf läuft bereits.']);
+      advLog(['Kampf läuft bereits.']);
     }
     return;
   }
@@ -351,12 +370,12 @@ async function handleAction(action) {
       await handleCombatAction(action, state, ctxForEvents());
       break;
     default:
-      printLines([cache.world.messages.unknownCommand]);
+      advLog([cache.world.messages.unknownCommand]);
   }
 }
 
 function printHelp() {
-  printLines([
+  advLog([
     'Adventure-Befehle:',
     '- adv start | adv continue | adv reset',
     '- Bewegung: geh nord/ost/sued/west oder n/s/o/w',
@@ -380,7 +399,8 @@ export const adventure = {
     state.visited = {};
     state.lockedExits = {};
     saveState();
-    printLines(['Starte Adventure...']);
+    ensureAdventureUI();
+    advLog(['Starte Adventure...']);
     await showRoom(true);
   },
   async continue() {
@@ -388,11 +408,13 @@ export const adventure = {
     adventureActive = true; // <— NEU
     const loaded = loadStateFromSave();
     if (!loaded) {
-      printLines(['Kein Spielstand gefunden. Starte neu.']);
+      ensureAdventureUI();
+      advLog(['Kein Spielstand gefunden. Starte neu.']);
       await adventure.start();
       return;
     }
-    printLines(['Lade letzten Spielstand...']);
+    ensureAdventureUI();
+    advLog(['Lade letzten Spielstand...']);
     await showRoom(!state.visited[state.location]);
   },
   async reset() {
@@ -411,9 +433,10 @@ export const adventure = {
   getState: () => state,
   getWorld: () => cache.world,
   dataRoot: DATA_ROOT,
-  isActive,            
-  exit: () => {        
+  isActive,
+  exit: () => {
     deactivate();
+    clearAdventureUI();
     printLines(['Du verlässt das Adventure und kehrst ins Darknetz-Terminal zurück.', ''], 'dim');
   }
 };
