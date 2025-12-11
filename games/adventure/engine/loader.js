@@ -1,10 +1,10 @@
 // Adventure loader utilities
 // Responsible for loading JSON assets and ASCII art for the adventure module.
 import { ensureAdventureUI } from './ui.js';
-import { getAdventureConfig } from './config.js';
+import { getDataRoot } from './config.js';
 
 function buildDataUrl(path) {
-  const root = getAdventureConfig().dataPath.replace(/\/$/, '');
+  const root = getDataRoot().replace(/\/$/, '');
   return `${root}/${path}`;
 }
 
