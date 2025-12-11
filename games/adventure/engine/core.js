@@ -3,6 +3,7 @@ import { parseInput } from './parser.js';
 import { loadJson, loadAscii } from './loader.js';
 import { runEvents } from './events.js';
 import { startCombat, handleCombatAction } from './combat.js';
+import { getAdventureConfig, setActiveAdventure } from './config.js';
 import {
   advLog,
   clearAdventureUI,
@@ -12,20 +13,19 @@ import {
   setAsciiContent
 } from './ui.js';
 
-const DATA_ROOT = './js/games/adventure/data';
 const SAVE_PREFIX = 'darkadv_';
 
 const defaultStats = { hp: 12, attack: 2, defense: 1 };
 
-const cache = {
+const createEmptyCache = () => ({
   world: null,
   rooms: {},
   items: {},
   objects: {},
   enemies: {}
-};
+});
 
-const state = {
+const createEmptyState = () => ({
   location: null,
   inventory: [],
   flags: {},
@@ -34,9 +34,12 @@ const state = {
   enemy: null,
   visited: {},
   lockedExits: {}
-};
+});
 
+let cache = createEmptyCache();
+let state = createEmptyState();
 let adventureActive = false;
+let activeAdventureId = getAdventureConfig().id;
 
 function isActive() {
   return adventureActive;
@@ -47,10 +50,11 @@ function deactivate() {
 }
 
 function getSaveKey() {
+  const cfg = getAdventureConfig();
   if (typeof getUserName === 'function') {
-    return `${SAVE_PREFIX}${getUserName()}`;
+    return `${SAVE_PREFIX}${cfg.id}_${getUserName()}`;
   }
-  return `${SAVE_PREFIX}guest`;
+  return `${SAVE_PREFIX}${cfg.id}_guest`;
 }
 
 function clone(obj) {
@@ -59,7 +63,8 @@ function clone(obj) {
 
 async function ensureWorldLoaded() {
   if (!cache.world) {
-    cache.world = await loadJson('world.json');
+    const cfg = getAdventureConfig();
+    cache.world = await loadJson(cfg.worldFile || 'world.json');
   }
 }
 
@@ -91,6 +96,36 @@ async function loadEnemy(id) {
   return cache.enemies[id];
 }
 
+function resetAdventureData(id) {
+  cache = createEmptyCache();
+  state = createEmptyState();
+  activeAdventureId = id;
+  adventureActive = false;
+}
+
+async function activateAdventure(adventureId) {
+  const config = await setActiveAdventure(adventureId);
+  if (config.id !== activeAdventureId) {
+    resetAdventureData(config.id);
+  }
+  return config;
+}
+
+async function ensureAdventure(adventureId) {
+  try {
+    await activateAdventure(adventureId);
+  } catch (err) {
+    const msg = err?.message || 'Adventure konnte nicht geladen werden.';
+    if (typeof printLines === 'function') {
+      printLines([msg, ''], 'error');
+    }
+    throw err;
+  }
+  if (!cache.world) {
+    await ensureWorldLoaded();
+  }
+}
+
 function saveState() {
   if (typeof localStorage === 'undefined') return;
   localStorage.setItem(
@@ -114,6 +149,7 @@ function loadStateFromSave() {
   if (!raw) return false;
   try {
     const saved = JSON.parse(raw);
+    state = createEmptyState();
     Object.assign(state, saved);
     return true;
   } catch (err) {
@@ -380,7 +416,7 @@ async function handleAction(action) {
 function printHelp() {
   advLog([
     'Adventure-Befehle:',
-    '- adv start | adv continue | adv reset | adv exit',
+    '- adv start [name] | adv continue [name] | adv reset [name] | adv exit',
     '- Bewegung: geh nord/ost/sued/west oder n/s/o/w',
     '- nimm <item>, untersuche <objekt>',
     '- benutze <objekt|item>',
@@ -391,44 +427,56 @@ function printHelp() {
 }
 
 export const adventure = {
-  async start() {
-    await ensureWorldLoaded();
-    adventureActive = true; // <— NEU
+  async start(adventureId) {
+    try {
+      await ensureAdventure(adventureId);
+    } catch {
+      return;
+    }
+    adventureActive = true;
+    state = createEmptyState();
     state.location = cache.world.startRoom;
-    state.inventory = [];
     state.flags = clone(cache.world.globalFlags || {});
-    state.stats = { ...defaultStats };
-    state.inCombat = false;
-    state.enemy = null;
-    state.visited = {};
-    state.lockedExits = {};
     saveState();
     ensureAdventureUI();
     advLog(['Starte Adventure...']);
     await showRoom(true);
   },
-  async continue() {
-    await ensureWorldLoaded();
-    adventureActive = true; // <— NEU
+  async continue(adventureId) {
+    try {
+      await ensureAdventure(adventureId);
+    } catch {
+      return;
+    }
+    adventureActive = true;
     const loaded = loadStateFromSave();
     if (!loaded) {
       ensureAdventureUI();
       advLog(['Kein Spielstand gefunden. Starte neu.']);
-      await adventure.start();
+      await adventure.start(adventureId);
       return;
     }
     ensureAdventureUI();
     advLog(['Lade letzten Spielstand...']);
     await showRoom(!state.visited[state.location]);
   },
-  async reset() {
+  async reset(adventureId) {
+    try {
+      await ensureAdventure(adventureId);
+    } catch {
+      return;
+    }
     clearSave();
-    
-    await adventure.start();
+
+    await adventure.start(adventureId);
   },
   async handleInput(text) {
     if (!cache.world) {
-      await ensureWorldLoaded();
+      try {
+        await ensureAdventure();
+      } catch {
+        return;
+      }
     }
     const action = parseInput(text);
     await handleAction(action);
@@ -436,7 +484,7 @@ export const adventure = {
   help: printHelp,
   getState: () => state,
   getWorld: () => cache.world,
-  dataRoot: DATA_ROOT,
+  getDataRoot: () => getAdventureConfig().dataPath,
   isActive,
   exit: () => {
     deactivate();

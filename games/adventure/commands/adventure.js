@@ -22,11 +22,11 @@ function ensureGameRegistered() {
 function printCommandHelp() {
   printLines([
     'Adventure Befehle:',
-    'adv start     - Neues Abenteuer starten',
-    'adv continue  - Letzten Spielstand laden',
-    'adv reset     - Spielstand zurücksetzen',
-    'adv exit      - Adventure beenden',
-    'adv help      - Diese Hilfe',
+    'adv start [name]    - Neues Abenteuer starten',
+    'adv continue [name] - Letzten Spielstand laden',
+    'adv reset [name]    - Spielstand zurücksetzen',
+    'adv exit            - Adventure beenden',
+    'adv help            - Diese Hilfe',
     'Während des Adventures werden Eingaben direkt interpretiert.'
   ]);
 }
@@ -34,15 +34,16 @@ function printCommandHelp() {
 async function handleAdvCommand(args = []) {
   ensureGameRegistered();
   const sub = (args[0] || '').toLowerCase();
+  const adventureId = args[1];
   switch (sub) {
     case 'start':
-      await adventure.start();
+      await adventure.start(adventureId);
       break;
     case 'continue':
-      await adventure.continue();
+      await adventure.continue(adventureId);
       break;
     case 'reset':
-      await adventure.reset();
+      await adventure.reset(adventureId);
       break;
     case 'exit':
     case 'quit':

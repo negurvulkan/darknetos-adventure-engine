@@ -1,15 +1,19 @@
 // Adventure loader utilities
 // Responsible for loading JSON assets and ASCII art for the adventure module.
 import { ensureAdventureUI } from './ui.js';
+import { getAdventureConfig } from './config.js';
 
-const DATA_ROOT = './js/games/adventure/data';
+function buildDataUrl(path) {
+  const root = getAdventureConfig().dataPath.replace(/\/$/, '');
+  return `${root}/${path}`;
+}
 
 /**
  * Load a JSON file relative to the adventure data root.
  * @param {string} path Relative path inside the data directory.
  */
 export async function loadJson(path) {
-  const url = `${DATA_ROOT}/${path}`;
+  const url = buildDataUrl(path);
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`Konnte Datei nicht laden: ${url}`);
@@ -25,7 +29,7 @@ export async function loadJson(path) {
 export async function loadAscii(asciiConfig) {
   const file = typeof asciiConfig === 'string' ? asciiConfig : asciiConfig.file;
   const fontSize = typeof asciiConfig === 'object' ? asciiConfig.fontSize : undefined;
-  const url = `${DATA_ROOT}/${file}`;
+  const url = buildDataUrl(file);
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`ASCII konnte nicht geladen werden: ${url}`);
