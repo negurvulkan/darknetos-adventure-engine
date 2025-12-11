@@ -143,6 +143,11 @@ button.danger { border-color: var(--error); color: var(--error); }
   background: #0c0714;
 }
 
+/* Fix für Blockly im Adventure-Builder */
+.event-blockly-host > .injectionDiv {
+  position: static !important;   /* oder 'unset' */
+}
+
 /* JSON-Textarea auf gleiche Höhe bringen, damit die Tabs nicht springen */
 .event-editor textarea {
   width: 100%;
