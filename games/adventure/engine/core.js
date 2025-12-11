@@ -186,14 +186,27 @@ async function performMove(action) {
 }
 
 async function performTake(action) {
-  const room = await loadRoom(state.location);
-  if (!action.object) {
-    printLines([cache.world.messages.unknownCommand]);
+    const room = await loadRoom(state.location);
+    if (!action.object) {
+      printLines([cache.world.messages.unknownCommand]);
+      return;
+    }
+  const rawObj = (action.object || '').toLowerCase();
+  const available = room.items || [];
+  
+  // 1. exakte Matches bevorzugen
+  let match = available.find(id => id.toLowerCase() === rawObj);
+  
+  // 2. sonst "enthält"-Match
+  if (!match) {
+    match = available.find(id => id.toLowerCase().includes(rawObj));
+  }
+  
+  if (!match) {
+    printLines([cache.world.messages.cannotTake]);
     return;
   }
-  const itemId = (action.object || '').replace(/\s+/g, '_');
-  const available = room.items || [];
-  const match = available.find((id) => id.toLowerCase().includes(itemId));
+
   if (!match) {
     printLines([cache.world.messages.cannotTake]);
     return;
