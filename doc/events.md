@@ -1,8 +1,3 @@
-Perfekt — hier kommt eine **kompakte, klare und sofort im Adventure-Builder nutzbare Dokumentation**, inklusive **Cheatsheet**, **Event-Erklärung**, **JSON-Templates** und **Best-Practice-Hinweisen**.
-Ideal zum Einbauen in eine „Hilfe“-Seite oder als aufklappbares Panel im UI.
-
----
-
 # NRW Noir Adventure Engine
 
 ## **Event-System – Dokumentation & Cheatsheet**
