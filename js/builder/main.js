@@ -657,6 +657,13 @@ function createEventEditor(initialValue, onChange) {
   jsonArea.value = JSON.stringify(initialValue || [], null, 2);
 
   const editor = initEventBlockEditor(blockHost, initialValue || []);
+
+  if (window.Blockly && editor?.workspace) {
+    window.setTimeout(() => {
+      window.Blockly.svgResize(editor.workspace);
+    }, 0);
+  }
+
   const resizeObserver = new ResizeObserver(() => {
     if (window.Blockly?.svgResize) {
       window.Blockly.svgResize(editor.workspace);
