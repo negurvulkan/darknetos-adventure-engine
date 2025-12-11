@@ -24,11 +24,41 @@ function printCommandHelp() {
     'Adventure Befehle:',
     'adv start [name]    - Neues Abenteuer starten',
     'adv continue [name] - Letzten Spielstand laden',
+    'adv list            - Liste aller Adventures',
     'adv reset [name]    - Spielstand zurücksetzen',
     'adv exit            - Adventure beenden',
     'adv help            - Diese Hilfe',
     'Während des Adventures werden Eingaben direkt interpretiert.'
   ]);
+}
+
+async function loadAdventureList() {
+  try {
+    const res = await fetch('./js/games/index.json');
+    if (!res.ok) throw new Error('Index konnte nicht geladen werden');
+    const data = await res.json();
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data.adventures)) return data.adventures;
+  } catch (err) {
+    console.warn('Adventure-Liste konnte nicht geladen werden:', err);
+  }
+  return [{ id: 'adventure', title: 'NRW Noir Adventure' }];
+}
+
+async function printAdventureList() {
+  const adventures = await loadAdventureList();
+  if (!adventures.length) {
+    printLines(['Keine Adventures gefunden.', ''], 'error');
+    return;
+  }
+
+  const lines = ['Verfügbare Adventures:', '---------------------'];
+  adventures.forEach((adv) => {
+    const title = adv.title ? `: ${adv.title}` : '';
+    lines.push(`- ${adv.id}${title}`);
+  });
+  lines.push('');
+  printLines(lines);
 }
 
 async function handleAdvCommand(args = []) {
@@ -41,6 +71,9 @@ async function handleAdvCommand(args = []) {
       break;
     case 'continue':
       await adventure.continue(adventureId);
+      break;
+    case 'list':
+      await printAdventureList();
       break;
     case 'reset':
       await adventure.reset(adventureId);
