@@ -7,6 +7,7 @@ const state = {
   dirty: false,
   selection: { view: 'world', roomId: null, itemId: null },
   asciiFiles: [],
+  map: { scale: 1, x: 0, y: 0 },
 };
 
 const viewEl = document.getElementById('view');
@@ -126,6 +127,7 @@ async function openAdventure(id) {
     state.data = res.data || res;
     state.asciiFiles = res.ascii || res.asciiFiles || [];
     state.selection = { view: 'world', roomId: null, itemId: null };
+    state.map = { scale: 1, x: 0, y: 0 };
     setDirty(false);
     renderEditor();
     renderSidebar();
@@ -671,6 +673,10 @@ function renderMap() {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 800 320');
 
+  const panGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  const zoomGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  panGroup.appendChild(zoomGroup);
+
   const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
   const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
   marker.setAttribute('id', 'arrow');
@@ -706,7 +712,7 @@ function renderMap() {
       line.setAttribute('x2', positions[targetId].x);
       line.setAttribute('y2', positions[targetId].y);
       line.setAttribute('class', 'map-link');
-      svg.appendChild(line);
+      zoomGroup.appendChild(line);
     });
   });
 
@@ -720,7 +726,7 @@ function renderMap() {
     rect.setAttribute('width', '120');
     rect.setAttribute('height', '48');
     rect.setAttribute('class', 'map-node');
-    svg.appendChild(rect);
+    zoomGroup.appendChild(rect);
 
     const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     label.setAttribute('x', pos.x);
@@ -729,10 +735,70 @@ function renderMap() {
     label.setAttribute('text-anchor', 'middle');
     label.setAttribute('dominant-baseline', 'middle');
     label.textContent = room.title || room.id;
-    svg.appendChild(label);
+    zoomGroup.appendChild(label);
   });
 
+  applyMapTransform(panGroup, zoomGroup);
+  svg.appendChild(panGroup);
   mapView.appendChild(svg);
+
+  const hint = document.createElement('div');
+  hint.className = 'map-hint';
+  hint.textContent = 'Scroll zum Zoomen, ziehen zum Verschieben';
+  mapView.appendChild(hint);
+
+  let isPanning = false;
+  let last = { x: 0, y: 0 };
+
+  svg.addEventListener('pointerdown', (e) => {
+    isPanning = true;
+    last = { x: e.clientX, y: e.clientY };
+    svg.setPointerCapture(e.pointerId);
+    svg.classList.add('panning');
+  });
+
+  svg.addEventListener('pointermove', (e) => {
+    if (!isPanning) return;
+    const rect = svg.getBoundingClientRect();
+    const deltaX = ((e.clientX - last.x) / rect.width) * 800;
+    const deltaY = ((e.clientY - last.y) / rect.height) * 320;
+    state.map.x += deltaX;
+    state.map.y += deltaY;
+    last = { x: e.clientX, y: e.clientY };
+    applyMapTransform(panGroup, zoomGroup);
+  });
+
+  const endPan = (e) => {
+    if (!isPanning) return;
+    isPanning = false;
+    if (svg.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId);
+    svg.classList.remove('panning');
+  };
+
+  svg.addEventListener('pointerup', endPan);
+  svg.addEventListener('pointerleave', endPan);
+
+  svg.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = svg.getBoundingClientRect();
+    const point = {
+      x: ((e.clientX - rect.left) / rect.width) * 800,
+      y: ((e.clientY - rect.top) / rect.height) * 320,
+    };
+    const factor = e.deltaY < 0 ? 1.1 : 0.9;
+    const newScale = Math.max(0.5, Math.min(3, state.map.scale * factor));
+    const oldScale = state.map.scale;
+    if (newScale === oldScale) return;
+    state.map.x += (oldScale - newScale) * point.x;
+    state.map.y += (oldScale - newScale) * point.y;
+    state.map.scale = newScale;
+    applyMapTransform(panGroup, zoomGroup);
+  }, { passive: false });
+}
+
+function applyMapTransform(panGroup, zoomGroup) {
+  panGroup.setAttribute('transform', `translate(${state.map.x} ${state.map.y})`);
+  zoomGroup.setAttribute('transform', `scale(${state.map.scale})`);
 }
 
 async function saveCurrent() {
