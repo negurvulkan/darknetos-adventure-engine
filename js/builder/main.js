@@ -657,6 +657,12 @@ function createEventEditor(initialValue, onChange) {
   jsonArea.value = JSON.stringify(initialValue || [], null, 2);
 
   const editor = initEventBlockEditor(blockHost, initialValue || []);
+  const resizeObserver = new ResizeObserver(() => {
+    if (window.Blockly?.svgResize) {
+      window.Blockly.svgResize(editor.workspace);
+    }
+  });
+  resizeObserver.observe(container);
 
   const syncBlocksToJson = (emitChange = false) => {
     const events = editor.getJson();
@@ -678,6 +684,9 @@ function createEventEditor(initialValue, onChange) {
     tabJson.classList.toggle('active', tab === 'json');
     blockHost.style.display = tab === 'blocks' ? 'block' : 'none';
     jsonArea.style.display = tab === 'json' ? 'block' : 'none';
+    if (tab === 'blocks' && window.Blockly?.svgResize) {
+      window.Blockly.svgResize(editor.workspace);
+    }
   };
 
   tabBlocks.onclick = () => {
