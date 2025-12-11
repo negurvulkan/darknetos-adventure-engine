@@ -1,6 +1,8 @@
 // Adventure command registration for the terminal router.
 import adventure from '../engine/core.js';
 
+const ADVENTURE_INDEX = './js/games/adventure/adventures/index.json';
+
 if (typeof window !== 'undefined') {
   window.darknetAdventure = adventure;
 }
@@ -34,7 +36,7 @@ function printCommandHelp() {
 
 async function loadAdventureList() {
   try {
-    const res = await fetch('./js/games/index.json');
+    const res = await fetch(ADVENTURE_INDEX);
     if (!res.ok) throw new Error('Index konnte nicht geladen werden');
     const data = await res.json();
     if (Array.isArray(data)) return data;
@@ -55,7 +57,8 @@ async function printAdventureList() {
   const lines = ['Verfügbare Adventures:', '---------------------'];
   adventures.forEach((adv) => {
     const title = adv.title ? `: ${adv.title}` : '';
-    lines.push(`- ${adv.id}${title}`);
+    const description = adv.description ? ` — ${adv.description}` : '';
+    lines.push(`- ${adv.id}${title}${description}`);
   });
   lines.push('');
   printLines(lines);
