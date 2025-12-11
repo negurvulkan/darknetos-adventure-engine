@@ -38,6 +38,15 @@ const noirTheme = Blockly.Theme.defineTheme('nrw_noir', {
   },
 });
 
+// Blockly 10+ logs deprecation warnings for legacy variable helpers even if
+// the workspace has no variable blocks. Patch the deprecated method to call the
+// modern API without emitting a warning so the console stays clean.
+if (Blockly?.Workspace?.prototype?.getAllVariables && Blockly?.Variables?.allUsedVarModels) {
+  Blockly.Workspace.prototype.getAllVariables = function patchedGetAllVariables(opt_type) {
+    return Blockly.Variables.allUsedVarModels(this, opt_type);
+  };
+}
+
 function registerBlocks() {
   if (!Blockly || Blockly.Blocks.event_message) return;
 
