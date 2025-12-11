@@ -135,6 +135,8 @@ button.danger { border-color: var(--error); color: var(--error); }
 .map-view { height: 320px; background: rgba(255, 255, 255, 0.02); border: 1px dashed var(--border); margin: 12px; border-radius: 10px; position: relative; overflow: hidden; }
 .map-view svg { width: 100%; height: 100%; cursor: grab; }
 .map-view svg.panning { cursor: grabbing; }
+.map-room { cursor: grab; }
+.map-view svg.dragging .map-room { cursor: grabbing; }
 .map-hint { position: absolute; bottom: 8px; right: 10px; background: rgba(0,0,0,0.45); padding: 4px 8px; border-radius: 6px; font-size: 12px; color: var(--muted); pointer-events: none; }
 .map-node { fill: rgba(255,134,255,0.1); stroke: var(--border); stroke-width: 1.5; }
 .map-text { fill: var(--text); font-size: 12px; font-family: "Fira Code", monospace; }
