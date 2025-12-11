@@ -2,6 +2,7 @@
 // Each event mutates the state or triggers UI updates.
 
 import { loadAscii } from './loader.js';
+import { advLog } from './ui.js';
 
 export async function runEvents(events = [], state, ctx) {
   for (const event of events) {
@@ -13,7 +14,7 @@ export async function runEvents(events = [], state, ctx) {
 async function handleEvent(event, state, ctx) {
   switch (event.type) {
     case 'message':
-      printLines([event.text]);
+      advLog([event.text]);
       break;
     case 'ascii':
       await loadAscii(event);
@@ -33,7 +34,7 @@ async function handleEvent(event, state, ctx) {
     case 'add_item':
       if (!state.inventory.includes(event.id)) {
         state.inventory.push(event.id);
-        printLines([`${event.id} erhalten.`]);
+        advLog([`${event.id} erhalten.`]);
       }
       ctx.saveState();
       break;
@@ -41,7 +42,7 @@ async function handleEvent(event, state, ctx) {
       const idx = state.inventory.indexOf(event.id);
       if (idx !== -1) {
         state.inventory.splice(idx, 1);
-        printLines([`${event.id} entfernt.`]);
+        advLog([`${event.id} entfernt.`]);
       }
       ctx.saveState();
       break;
@@ -49,14 +50,14 @@ async function handleEvent(event, state, ctx) {
     case 'unlock_exit': {
       const key = `${event.room}:${event.direction}`;
       state.lockedExits[key] = false;
-      printLines([`Ausgang ${event.direction} ist nun offen.`]);
+      advLog([`Ausgang ${event.direction} ist nun offen.`]);
       ctx.saveState();
       break;
     }
     case 'lock_exit': {
       const key = `${event.room}:${event.direction}`;
       state.lockedExits[key] = true;
-      printLines([`Ausgang ${event.direction} ist nun versperrt.`]);
+      advLog([`Ausgang ${event.direction} ist nun versperrt.`]);
       ctx.saveState();
       break;
     }
@@ -69,6 +70,6 @@ async function handleEvent(event, state, ctx) {
       await ctx.startCombat(event.enemy);
       break;
     default:
-      printLines([`Unbekanntes Event: ${event.type || 'unbenannt'}`]);
+      advLog([`Unbekanntes Event: ${event.type || 'unbenannt'}`]);
   }
 }
