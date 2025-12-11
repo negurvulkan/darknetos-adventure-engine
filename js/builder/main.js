@@ -1,4 +1,5 @@
 import { Api } from './api.js';
+import { initEventBlockEditor } from './event-blockly.js';
 
 const state = {
   adventures: [],
@@ -629,12 +630,73 @@ function eventArea(labelText, value, onChange) {
   const wrap = document.createElement('div');
   wrap.className = 'field';
   const label = document.createElement('label');
-  label.textContent = `${labelText} (JSON Array)`;
-  const area = document.createElement('textarea');
-  area.value = JSON.stringify(value || [], null, 2);
-  area.onchange = () => safeJsonUpdate(area.value, onChange);
-  wrap.append(label, area);
+  label.textContent = labelText;
+  wrap.appendChild(label);
+  wrap.appendChild(createEventEditor(value, onChange));
   return wrap;
+}
+
+function createEventEditor(initialValue, onChange) {
+  const container = document.createElement('div');
+  container.className = 'event-editor';
+
+  const tabs = document.createElement('div');
+  tabs.className = 'event-tabs';
+  const tabBlocks = document.createElement('button');
+  tabBlocks.type = 'button';
+  tabBlocks.textContent = 'Blöcke';
+  const tabJson = document.createElement('button');
+  tabJson.type = 'button';
+  tabJson.textContent = 'JSON';
+  tabs.append(tabBlocks, tabJson);
+
+  const blockHost = document.createElement('div');
+  blockHost.className = 'event-blockly-host';
+
+  const jsonArea = document.createElement('textarea');
+  jsonArea.value = JSON.stringify(initialValue || [], null, 2);
+
+  const editor = initEventBlockEditor(blockHost, initialValue || []);
+
+  const syncBlocksToJson = (emitChange = false) => {
+    const events = editor.getJson();
+    jsonArea.value = JSON.stringify(events, null, 2);
+    if (emitChange) onChange(events);
+  };
+
+  const syncJsonToBlocks = () => safeJsonUpdate(jsonArea.value, (val) => {
+    editor.setJson(val);
+    onChange(val);
+  });
+
+  editor.workspace.addChangeListener(() => syncBlocksToJson(true));
+
+  let activeTab = 'blocks';
+  const setTab = (tab) => {
+    activeTab = tab;
+    tabBlocks.classList.toggle('active', tab === 'blocks');
+    tabJson.classList.toggle('active', tab === 'json');
+    blockHost.style.display = tab === 'blocks' ? 'block' : 'none';
+    jsonArea.style.display = tab === 'json' ? 'block' : 'none';
+  };
+
+  tabBlocks.onclick = () => {
+    if (activeTab === 'blocks') return;
+    syncJsonToBlocks();
+    setTab('blocks');
+  };
+
+  tabJson.onclick = () => {
+    if (activeTab === 'json') return;
+    syncBlocksToJson(false);
+    setTab('json');
+  };
+
+  jsonArea.onchange = () => syncJsonToBlocks();
+
+  setTab('blocks');
+  container.append(tabs, blockHost, jsonArea);
+  return container;
 }
 
 function combineTable(item) {
@@ -662,10 +724,8 @@ function combineTable(item) {
     tdTarget.appendChild(inputTarget);
 
     const tdEvents = document.createElement('td');
-    const textarea = document.createElement('textarea');
-    textarea.value = JSON.stringify(events || [], null, 2);
-    textarea.onchange = () => safeJsonUpdate(textarea.value, (val) => { item.combine[targetId] = val; setDirty(true); });
-    tdEvents.appendChild(textarea);
+    const eventEditor = createEventEditor(events || [], (val) => { item.combine[targetId] = val; setDirty(true); });
+    tdEvents.appendChild(eventEditor);
 
     const tdBtn = document.createElement('td');
     const del = document.createElement('button');
