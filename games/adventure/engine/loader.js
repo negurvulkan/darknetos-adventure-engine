@@ -1,5 +1,6 @@
 // Adventure loader utilities
 // Responsible for loading JSON assets and ASCII art for the adventure module.
+import { ensureAdventureUI } from './ui.js';
 
 const DATA_ROOT = './js/games/adventure/data';
 
@@ -30,6 +31,11 @@ export async function loadAscii(asciiConfig) {
     throw new Error(`ASCII konnte nicht geladen werden: ${url}`);
   }
   const text = await res.text();
+
+  if (typeof window !== 'undefined' && typeof ensureAdventureUI === 'function') {
+    // Make sure the adventure UI exists so ASCII art ends up in the dedicated area.
+    ensureAdventureUI();
+  }
 
   if (typeof window !== 'undefined' && window.advAsciiEl) {
     window.advAsciiEl.textContent = text;
