@@ -16,6 +16,10 @@ const sidebar = document.getElementById('sidebar-content');
 const mapView = document.getElementById('map-view');
 const asciiPreview = document.getElementById('ascii-preview');
 
+function isFiniteNumber(val) {
+  return typeof val === 'number' && Number.isFinite(val);
+}
+
 function $(sel) { return document.querySelector(sel); }
 
 function toast(message, type = 'info') {
@@ -693,14 +697,26 @@ function renderMap() {
   svg.appendChild(defs);
 
   const centerX = 400, centerY = 160, radius = 120;
-  const positions = {};
+  const defaultPositions = {};
   rooms.forEach((room, idx) => {
     const angle = (idx / rooms.length) * Math.PI * 2;
-    positions[room.id] = {
+    defaultPositions[room.id] = {
       x: centerX + Math.cos(angle) * radius,
       y: centerY + Math.sin(angle) * radius
     };
   });
+
+  const positions = {};
+  rooms.forEach(room => {
+    const stored = room.mapPos || room.map_position; // fallback key for potential legacy naming
+    if (stored && isFiniteNumber(stored.x) && isFiniteNumber(stored.y)) {
+      positions[room.id] = { x: stored.x, y: stored.y };
+    } else {
+      positions[room.id] = defaultPositions[room.id];
+    }
+  });
+
+  const lines = [];
 
   rooms.forEach(room => {
     const exits = room.exits || {};
@@ -712,30 +728,44 @@ function renderMap() {
       line.setAttribute('x2', positions[targetId].x);
       line.setAttribute('y2', positions[targetId].y);
       line.setAttribute('class', 'map-link');
+      line.dataset.from = room.id;
+      line.dataset.to = targetId;
       zoomGroup.appendChild(line);
+      lines.push(line);
     });
   });
 
+  const roomNodes = {};
   rooms.forEach(room => {
     const pos = positions[room.id];
+    const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    group.setAttribute('class', 'map-room');
+
     const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    rect.setAttribute('x', pos.x - 60);
-    rect.setAttribute('y', pos.y - 24);
     rect.setAttribute('rx', '8');
     rect.setAttribute('ry', '8');
     rect.setAttribute('width', '120');
     rect.setAttribute('height', '48');
     rect.setAttribute('class', 'map-node');
-    zoomGroup.appendChild(rect);
+    group.appendChild(rect);
 
     const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    label.setAttribute('x', pos.x);
-    label.setAttribute('y', pos.y);
     label.setAttribute('class', 'map-text');
     label.setAttribute('text-anchor', 'middle');
     label.setAttribute('dominant-baseline', 'middle');
     label.textContent = room.title || room.id;
-    zoomGroup.appendChild(label);
+    group.appendChild(label);
+
+    const updateRoomPosition = (p) => {
+      rect.setAttribute('x', p.x - 60);
+      rect.setAttribute('y', p.y - 24);
+      label.setAttribute('x', p.x);
+      label.setAttribute('y', p.y);
+    };
+
+    updateRoomPosition(pos);
+    zoomGroup.appendChild(group);
+    roomNodes[room.id] = { group, updateRoomPosition };
   });
 
   applyMapTransform(panGroup, zoomGroup);
@@ -744,11 +774,55 @@ function renderMap() {
 
   const hint = document.createElement('div');
   hint.className = 'map-hint';
-  hint.textContent = 'Scroll zum Zoomen, ziehen zum Verschieben';
+  hint.textContent = 'Scroll zum Zoomen, Karte ziehen zum Verschieben, Räume ziehen zum Anordnen';
   mapView.appendChild(hint);
 
   let isPanning = false;
   let last = { x: 0, y: 0 };
+  let draggingRoom = null;
+  let dragOffset = { x: 0, y: 0 };
+
+  const toMapCoords = (clientX, clientY) => {
+    const rect = svg.getBoundingClientRect();
+    const point = {
+      x: ((clientX - rect.left) / rect.width) * 800,
+      y: ((clientY - rect.top) / rect.height) * 320,
+    };
+    return {
+      x: (point.x - state.map.x) / state.map.scale,
+      y: (point.y - state.map.y) / state.map.scale,
+    };
+  };
+
+  const updateConnections = (roomId) => {
+    lines.forEach(line => {
+      if (line.dataset.from === roomId) {
+        line.setAttribute('x1', positions[roomId].x);
+        line.setAttribute('y1', positions[roomId].y);
+      }
+      if (line.dataset.to === roomId) {
+        line.setAttribute('x2', positions[roomId].x);
+        line.setAttribute('y2', positions[roomId].y);
+      }
+    });
+  };
+
+  const startDrag = (room, e) => {
+    draggingRoom = room;
+    const current = positions[room.id];
+    const pointerPos = toMapCoords(e.clientX, e.clientY);
+    dragOffset = { x: pointerPos.x - current.x, y: pointerPos.y - current.y };
+    svg.setPointerCapture(e.pointerId);
+    svg.classList.add('dragging');
+  };
+
+  Object.entries(roomNodes).forEach(([roomId, node]) => {
+    const room = rooms.find(r => r.id === roomId);
+    node.group.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      startDrag(room, e);
+    });
+  });
 
   svg.addEventListener('pointerdown', (e) => {
     isPanning = true;
@@ -758,6 +832,14 @@ function renderMap() {
   });
 
   svg.addEventListener('pointermove', (e) => {
+    if (draggingRoom) {
+      const pointerPos = toMapCoords(e.clientX, e.clientY);
+      const newPos = { x: pointerPos.x - dragOffset.x, y: pointerPos.y - dragOffset.y };
+      positions[draggingRoom.id] = newPos;
+      roomNodes[draggingRoom.id].updateRoomPosition(newPos);
+      updateConnections(draggingRoom.id);
+      return;
+    }
     if (!isPanning) return;
     const rect = svg.getBoundingClientRect();
     const deltaX = ((e.clientX - last.x) / rect.width) * 800;
@@ -768,6 +850,16 @@ function renderMap() {
     applyMapTransform(panGroup, zoomGroup);
   });
 
+  const endDrag = (e) => {
+    if (!draggingRoom) return;
+    const room = draggingRoom;
+    room.mapPos = { ...positions[room.id] };
+    setDirty(true);
+    draggingRoom = null;
+    svg.classList.remove('dragging');
+    if (svg.hasPointerCapture(e.pointerId)) svg.releasePointerCapture(e.pointerId);
+  };
+
   const endPan = (e) => {
     if (!isPanning) return;
     isPanning = false;
@@ -775,8 +867,8 @@ function renderMap() {
     svg.classList.remove('panning');
   };
 
-  svg.addEventListener('pointerup', endPan);
-  svg.addEventListener('pointerleave', endPan);
+  svg.addEventListener('pointerup', (e) => { endDrag(e); endPan(e); });
+  svg.addEventListener('pointerleave', (e) => { endDrag(e); endPan(e); });
 
   svg.addEventListener('wheel', (e) => {
     e.preventDefault();
