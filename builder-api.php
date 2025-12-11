@@ -88,6 +88,7 @@ function loadAdventure($id)
     $game = readJsonFile($dir . '/game.json');
     $rooms = readJsonDirectory($dir . '/rooms');
     $items = readJsonDirectory($dir . '/items');
+    $objects = readJsonDirectory($dir . '/objects');
     $asciiFiles = listFiles($dir . '/ascii');
 
     return [
@@ -97,6 +98,7 @@ function loadAdventure($id)
             'game' => $game,
             'rooms' => $rooms,
             'items' => $items,
+            'objects' => $objects,
         ],
         'ascii' => $asciiFiles,
     ];
@@ -112,6 +114,7 @@ function saveAdventure($id, $payload)
     writeJsonFile($dir . '/game.json', $payload['game'] ?? new stdClass());
     persistCollection($dir . '/rooms', $payload['rooms'] ?? [], 'rooms');
     persistCollection($dir . '/items', $payload['items'] ?? [], 'items');
+    persistCollection($dir . '/objects', $payload['objects'] ?? [], 'objects');
 
     return ['status' => 'ok'];
 }
@@ -171,6 +174,7 @@ function createAdventure($payload)
     }
     @mkdir($dir . '/rooms', 0777, true);
     @mkdir($dir . '/items', 0777, true);
+    @mkdir($dir . '/objects', 0777, true);
     @mkdir($dir . '/ascii', 0777, true);
 
     if (!empty($payload['source'])) {
@@ -210,6 +214,7 @@ function copyAdventure($sourceId, $targetId)
     }
     copyDirectory($sourceDir . '/rooms', $targetDir . '/rooms');
     copyDirectory($sourceDir . '/items', $targetDir . '/items');
+    copyDirectory($sourceDir . '/objects', $targetDir . '/objects');
     copyDirectory($sourceDir . '/ascii', $targetDir . '/ascii');
 }
 

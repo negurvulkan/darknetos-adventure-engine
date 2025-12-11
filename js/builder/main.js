@@ -5,7 +5,7 @@ const state = {
   currentAdventure: null,
   data: null,
   dirty: false,
-  selection: { view: 'world', roomId: null, itemId: null },
+  selection: { view: 'world', roomId: null, itemId: null, objectId: null },
   asciiFiles: [],
   map: { scale: 1, x: 0, y: 0 },
 };
@@ -130,7 +130,7 @@ async function openAdventure(id) {
     state.currentAdventure = res.adventure || state.adventures.find(a => a.id === id) || { id };
     state.data = res.data || res;
     state.asciiFiles = res.ascii || res.asciiFiles || [];
-    state.selection = { view: 'world', roomId: null, itemId: null };
+    state.selection = { view: 'world', roomId: null, itemId: null, objectId: null };
     state.map = { scale: 1, x: 0, y: 0 };
     setDirty(false);
     renderEditor();
@@ -148,7 +148,7 @@ function renderSidebar() {
   const worldNav = document.createElement('div');
   worldNav.className = 'nav-item' + (state.selection.view === 'world' ? ' active' : '');
   worldNav.textContent = 'World & Game';
-  worldNav.onclick = () => { state.selection.view = 'world'; state.selection.roomId = null; renderEditor(); renderSidebar(); };
+  worldNav.onclick = () => { state.selection.view = 'world'; state.selection.roomId = null; state.selection.itemId = null; state.selection.objectId = null; renderEditor(); renderSidebar(); };
   sidebar.appendChild(worldNav);
 
   sidebar.appendChild(sectionTitle('Räume'));
@@ -184,6 +184,23 @@ function renderSidebar() {
   btnNewItem.onclick = addItem;
   sidebar.appendChild(itemList);
   sidebar.appendChild(btnNewItem);
+
+  sidebar.appendChild(sectionTitle('Objekte'));
+  const objectList = document.createElement('div');
+  objectList.className = 'nav-list';
+  (state.data.objects || []).forEach(obj => {
+    const row = document.createElement('div');
+    row.className = 'nav-item' + (state.selection.objectId === obj.id ? ' active' : '');
+    row.textContent = obj.name || obj.id;
+    row.onclick = () => { state.selection.view = 'object'; state.selection.objectId = obj.id; renderEditor(); renderSidebar(); };
+    objectList.appendChild(row);
+  });
+  const btnNewObject = document.createElement('button');
+  btnNewObject.textContent = 'Neues Objekt';
+  btnNewObject.style.marginTop = '8px';
+  btnNewObject.onclick = addObject;
+  sidebar.appendChild(objectList);
+  sidebar.appendChild(btnNewObject);
 }
 
 function sectionTitle(label) {
@@ -202,6 +219,8 @@ function renderEditor() {
     renderRoomEditor();
   } else if (state.selection.view === 'item') {
     renderItemEditor();
+  } else if (state.selection.view === 'object') {
+    renderObjectEditor();
   }
 }
 
@@ -288,7 +307,7 @@ function renderRoomEditor() {
   const lists = document.createElement('div');
   lists.className = 'form-grid';
   lists.appendChild(multiselectField('Items', state.data.items || [], room.items || [], (vals) => updateRoom(room, 'items', vals)));
-  lists.appendChild(textListField('Objekte', room.objects || [], (vals) => updateRoom(room, 'objects', vals)));
+  lists.appendChild(multiselectField('Objekte', state.data.objects || [], room.objects || [], (vals) => updateRoom(room, 'objects', vals)));
   card.appendChild(lists);
 
   card.appendChild(exitTable(room));
@@ -342,6 +361,45 @@ function renderItemEditor() {
   del.className = 'danger';
   del.textContent = 'Item löschen';
   del.onclick = () => deleteItem(item.id);
+  actions.appendChild(del);
+  card.appendChild(actions);
+
+  viewEl.appendChild(card);
+}
+
+function renderObjectEditor() {
+  const obj = (state.data.objects || []).find(o => o.id === state.selection.objectId);
+  if (!obj) return;
+  viewHeader.innerHTML = `<div class="badge"><span class="dot"></span> Objekt: ${obj.id}</div>`;
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  card.appendChild(createFieldGrid([
+    field('ID', 'text', obj.id, (v) => updateObject(obj, 'id', v)),
+    field('Name', 'text', obj.name, (v) => updateObject(obj, 'name', v)),
+    field('Gesperrt', 'checkbox', obj.locked === true, (v) => updateObject(obj, 'locked', v)),
+  ]));
+
+  const desc = document.createElement('div');
+  desc.className = 'field';
+  desc.innerHTML = '<label>Beschreibung</label>';
+  const area = document.createElement('textarea');
+  area.value = obj.description || '';
+  area.oninput = () => updateObject(obj, 'description', area.value);
+  desc.appendChild(area);
+  card.appendChild(desc);
+
+  card.appendChild(eventArea('On Inspect', obj.inspect || [], (val) => updateObject(obj, 'inspect', val)));
+  card.appendChild(eventArea('On Use', obj.use || [], (val) => updateObject(obj, 'use', val)));
+  card.appendChild(eventArea('On Locked Use', obj.on_locked_use || [], (val) => updateObject(obj, 'on_locked_use', val)));
+
+  const actions = document.createElement('div');
+  actions.style.display = 'flex';
+  actions.style.gap = '10px';
+  const del = document.createElement('button');
+  del.className = 'danger';
+  del.textContent = 'Objekt löschen';
+  del.onclick = () => deleteObject(obj.id);
   actions.appendChild(del);
   card.appendChild(actions);
 
@@ -617,13 +675,18 @@ function updateItem(item, key, value) {
   setDirty(true);
 }
 
+function updateObject(obj, key, value) {
+  obj[key] = value;
+  setDirty(true);
+}
+
 function addRoom() {
   const id = prompt('Neue Raum-ID:');
   if (!id) return;
   const newRoom = { id, title: id, description: '', ascii: '', items: [], objects: [], exits: {}, on_enter: [], on_first_enter: [] };
   state.data.rooms = state.data.rooms || [];
   state.data.rooms.push(newRoom);
-  state.selection = { view: 'room', roomId: id, itemId: null };
+  state.selection = { view: 'room', roomId: id, itemId: null, objectId: null };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -633,7 +696,7 @@ function addRoom() {
 function deleteRoom(id) {
   if (!confirm('Raum wirklich löschen?')) return;
   state.data.rooms = (state.data.rooms || []).filter(r => r.id !== id);
-  state.selection = { view: 'world', roomId: null, itemId: null };
+  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -646,7 +709,7 @@ function addItem() {
   const item = { id, name: id, description: '', pickup: true, combine: {}, on_use: [] };
   state.data.items = state.data.items || [];
   state.data.items.push(item);
-  state.selection = { view: 'item', itemId: id, roomId: null };
+  state.selection = { view: 'item', itemId: id, roomId: null, objectId: null };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -655,8 +718,37 @@ function addItem() {
 function deleteItem(id) {
   if (!confirm('Item löschen?')) return;
   state.data.items = (state.data.items || []).filter(i => i.id !== id);
+  state.data.rooms = (state.data.rooms || []).map(room => ({
+    ...room,
+    items: (room.items || []).filter(itemId => itemId !== id)
+  }));
   setDirty(true);
-  state.selection = { view: 'world', roomId: null, itemId: null };
+  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null };
+  renderSidebar();
+  renderEditor();
+}
+
+function addObject() {
+  const id = prompt('Neue Objekt-ID:');
+  if (!id) return;
+  const obj = { id, name: id, description: '', locked: false, use: [], on_locked_use: [], inspect: [] };
+  state.data.objects = state.data.objects || [];
+  state.data.objects.push(obj);
+  state.selection = { view: 'object', objectId: id, roomId: null, itemId: null };
+  setDirty(true);
+  renderSidebar();
+  renderEditor();
+}
+
+function deleteObject(id) {
+  if (!confirm('Objekt wirklich löschen?')) return;
+  state.data.objects = (state.data.objects || []).filter(o => o.id !== id);
+  state.data.rooms = (state.data.rooms || []).map(room => ({
+    ...room,
+    objects: (room.objects || []).filter(objId => objId !== id),
+  }));
+  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null };
+  setDirty(true);
   renderSidebar();
   renderEditor();
 }
@@ -901,6 +993,7 @@ async function saveCurrent() {
       game: state.data.game,
       rooms: state.data.rooms,
       items: state.data.items,
+      objects: state.data.objects,
     });
     toast('Adventure gespeichert', 'success');
     setDirty(false);
