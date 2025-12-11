@@ -1,0 +1,6 @@
+{
+  "id": "adventure/adventures/dunkler-wald",
+  "title": "Dunkler Wald zur alten Villa",
+  "dataPath": "data",
+  "worldFile": "world.json"
+}
