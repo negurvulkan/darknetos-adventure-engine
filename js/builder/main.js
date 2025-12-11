@@ -478,6 +478,10 @@ function multiselectField(labelText, options, selected, onChange) {
   return wrap;
 }
 
+function generateDefaultExitFlag(roomId, direction) {
+  return `exit_${roomId}_${direction}_open`;
+}
+
 function textListField(labelText, values, onChange) {
   const wrap = document.createElement('div');
   wrap.className = 'field';
@@ -494,6 +498,19 @@ function textListField(labelText, values, onChange) {
   return wrap;
 }
 
+function getExitMeta(room, dir) {
+  return (room.exitMeta && room.exitMeta[dir]) || {};
+}
+
+function setExitMeta(room, dir, meta) {
+  room.exitMeta = room.exitMeta || {};
+  if (meta) {
+    room.exitMeta[dir] = meta;
+  } else if (room.exitMeta) {
+    delete room.exitMeta[dir];
+  }
+}
+
 function exitTable(room) {
   const wrap = document.createElement('div');
   wrap.className = 'field';
@@ -501,7 +518,7 @@ function exitTable(room) {
   const table = document.createElement('table');
   table.className = 'table';
   const head = document.createElement('tr');
-  head.innerHTML = '<th>Richtung</th><th>Raum-ID</th><th></th>';
+  head.innerHTML = '<th>Richtung</th><th>Raum-ID</th><th>Anfangs versperrt</th><th>Versperrt durch Objekt-ID</th><th>Zustands-Flag (optional)</th><th></th>';
   table.appendChild(head);
   const exits = room.exits || {};
   Object.entries(exits).forEach(([dir, target]) => {
@@ -525,6 +542,7 @@ function exitTable(room) {
 }
 
 function exitRow(room, dir, target) {
+  const meta = getExitMeta(room, dir);
   const tr = document.createElement('tr');
   const tdDir = document.createElement('td');
   const inputDir = document.createElement('input');
@@ -535,6 +553,11 @@ function exitRow(room, dir, target) {
     room.exits = room.exits || {};
     delete room.exits[dir];
     room.exits[val] = target;
+    const currentMeta = getExitMeta(room, dir);
+    if (Object.keys(currentMeta).length) {
+      setExitMeta(room, dir, null);
+      setExitMeta(room, val, currentMeta);
+    }
     setDirty(true);
     renderMap();
   };
@@ -544,18 +567,61 @@ function exitRow(room, dir, target) {
   inputTarget.value = target;
   inputTarget.onchange = () => { room.exits[dir] = inputTarget.value.trim(); setDirty(true); renderMap(); };
   tdTarget.appendChild(inputTarget);
+  const tdLocked = document.createElement('td');
+  const inputLocked = document.createElement('input');
+  inputLocked.type = 'checkbox';
+  inputLocked.checked = !!meta.locked;
+  inputLocked.onchange = () => {
+    const nextMeta = { ...getExitMeta(room, dir), locked: inputLocked.checked };
+    setExitMeta(room, dir, nextMeta);
+    setDirty(true);
+  };
+  tdLocked.appendChild(inputLocked);
+
+  const tdObject = document.createElement('td');
+  const inputObject = document.createElement('input');
+  inputObject.setAttribute('list', `exit-object-list-${room.id}-${dir}`);
+  inputObject.value = meta.objectId || '';
+  inputObject.placeholder = 'tor_villa o.Ä.';
+  inputObject.onchange = () => {
+    const nextMeta = { ...getExitMeta(room, dir), objectId: inputObject.value.trim() };
+    setExitMeta(room, dir, nextMeta);
+    setDirty(true);
+  };
+  const datalist = document.createElement('datalist');
+  datalist.id = `exit-object-list-${room.id}-${dir}`;
+  (state.data.objects || []).forEach(obj => {
+    const opt = document.createElement('option');
+    opt.value = obj.id;
+    opt.textContent = obj.name || obj.id;
+    datalist.appendChild(opt);
+  });
+  tdObject.append(inputObject, datalist);
+
+  const tdFlag = document.createElement('td');
+  const inputFlag = document.createElement('input');
+  inputFlag.value = meta.flag || '';
+  inputFlag.placeholder = generateDefaultExitFlag(room.id, dir);
+  inputFlag.onchange = () => {
+    const nextMeta = { ...getExitMeta(room, dir), flag: inputFlag.value.trim() };
+    setExitMeta(room, dir, nextMeta);
+    setDirty(true);
+  };
+  tdFlag.appendChild(inputFlag);
+
   const tdBtn = document.createElement('td');
   const del = document.createElement('button');
   del.className = 'ghost';
   del.textContent = 'x';
   del.onclick = () => {
     delete room.exits[dir];
+    setExitMeta(room, dir, null);
     setDirty(true);
     renderEditor();
     renderMap();
   };
   tdBtn.appendChild(del);
-  tr.append(tdDir, tdTarget, tdBtn);
+  tr.append(tdDir, tdTarget, tdLocked, tdObject, tdFlag, tdBtn);
   return tr;
 }
 
@@ -683,7 +749,7 @@ function updateObject(obj, key, value) {
 function addRoom() {
   const id = prompt('Neue Raum-ID:');
   if (!id) return;
-  const newRoom = { id, title: id, description: '', ascii: '', items: [], objects: [], exits: {}, on_enter: [], on_first_enter: [] };
+  const newRoom = { id, title: id, description: '', ascii: '', items: [], objects: [], exits: {}, exitMeta: {}, on_enter: [], on_first_enter: [] };
   state.data.rooms = state.data.rooms || [];
   state.data.rooms.push(newRoom);
   state.selection = { view: 'room', roomId: id, itemId: null, objectId: null };
@@ -985,15 +1051,80 @@ function applyMapTransform(panGroup, zoomGroup) {
   zoomGroup.setAttribute('transform', `scale(${state.map.scale})`);
 }
 
+function ensureLockExitEvent(room, direction) {
+  room.on_first_enter = room.on_first_enter || [];
+  const exists = room.on_first_enter.some(ev => ev.type === 'lock_exit' && ev.room === room.id && ev.direction === direction);
+  if (!exists) {
+    room.on_first_enter.push({ type: 'lock_exit', room: room.id, direction });
+  }
+}
+
+function ensureObjectHasExitControlLogic(object, meta, roomId, direction) {
+  if (!object) return;
+  object.use = object.use || [];
+  const flag = meta.flag || generateDefaultExitFlag(roomId, direction);
+  const unlockEvent = { type: 'unlock_exit', room: roomId, direction };
+  const existingBlock = object.use.find(ev => ev.type === 'flag_if' && ev.key === flag);
+  if (existingBlock) {
+    const thenEvents = existingBlock.then || [];
+    const hasUnlock = thenEvents.some(ev => ev.type === 'unlock_exit' && ev.room === roomId && ev.direction === direction);
+    if (!hasUnlock) existingBlock.then = thenEvents.concat([unlockEvent]);
+    return;
+  }
+  const block = {
+    type: 'flag_if',
+    key: flag,
+    equals: true,
+    then: [
+      { type: 'message', text: 'Mit einem Ächzen schwingt das Tor auf.' },
+      unlockEvent,
+    ],
+    else: [
+      { type: 'message', text: 'Es rührt sich keinen Millimeter. Irgendetwas fehlt noch.' },
+    ],
+  };
+  object.use.push(block);
+}
+
+function applyExitLockingMetaToRooms(adventureData) {
+  const objects = adventureData.objects || [];
+  const objectById = Object.fromEntries(objects.map(o => [o.id, o]));
+  (adventureData.rooms || []).forEach(room => {
+    room.exitMeta = room.exitMeta || {};
+    const exitMeta = room.exitMeta;
+    Object.entries(exitMeta).forEach(([direction, meta]) => {
+      const normalizedMeta = { ...meta };
+      normalizedMeta.flag = normalizedMeta.flag || generateDefaultExitFlag(room.id, direction);
+      room.exitMeta[direction] = normalizedMeta;
+      if (normalizedMeta.locked) ensureLockExitEvent(room, direction);
+      if (normalizedMeta.objectId) {
+        const obj = objectById[normalizedMeta.objectId];
+        if (obj) {
+          ensureObjectHasExitControlLogic(obj, normalizedMeta, room.id, direction);
+        } else {
+          console.warn(`Exit meta refers to missing object ${normalizedMeta.objectId}`);
+        }
+      }
+    });
+  });
+}
+
+function prepareAdventureForSave(data) {
+  const cloned = JSON.parse(JSON.stringify(data));
+  applyExitLockingMetaToRooms(cloned);
+  return cloned;
+}
+
 async function saveCurrent() {
   if (!state.currentAdventure || !state.data) return;
   try {
+    const prepared = prepareAdventureForSave(state.data);
     await Api.saveAdventure(state.currentAdventure.id, {
-      world: state.data.world,
-      game: state.data.game,
-      rooms: state.data.rooms,
-      items: state.data.items,
-      objects: state.data.objects,
+      world: prepared.world,
+      game: prepared.game,
+      rooms: prepared.rooms,
+      items: prepared.items,
+      objects: prepared.objects,
     });
     toast('Adventure gespeichert', 'success');
     setDirty(false);
