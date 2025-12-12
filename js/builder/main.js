@@ -1,12 +1,15 @@
 import { Api } from './api.js';
 import { initEventBlockEditor } from './event-blockly.js';
+import { renderNpcSidebar, renderNpcEditor, ensureNpcCollection, createNpcDraft } from './npcs.js';
+import { ensureDialogState, ensureDialogForNpc } from './dialogs.js';
+import { renderDialogEditor } from './dialogEditor.js';
 
 const state = {
   adventures: [],
   currentAdventure: null,
   data: null,
   dirty: false,
-  selection: { view: 'world', roomId: null, itemId: null, objectId: null },
+  selection: { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null },
   asciiFiles: [],
   map: { scale: 1, x: 0, y: 0 },
 };
@@ -130,8 +133,10 @@ async function openAdventure(id) {
     const res = await Api.loadAdventure(id);
     state.currentAdventure = res.adventure || state.adventures.find(a => a.id === id) || { id };
     state.data = res.data || res;
+    ensureNpcCollection(state.data);
+    ensureDialogState(state.data);
     state.asciiFiles = res.ascii || res.asciiFiles || [];
-    state.selection = { view: 'world', roomId: null, itemId: null, objectId: null };
+    state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
     state.map = { scale: 1, x: 0, y: 0 };
     setDirty(false);
     renderEditor();
@@ -149,7 +154,7 @@ function renderSidebar() {
   const worldNav = document.createElement('div');
   worldNav.className = 'nav-item' + (state.selection.view === 'world' ? ' active' : '');
   worldNav.textContent = 'World & Game';
-  worldNav.onclick = () => { state.selection.view = 'world'; state.selection.roomId = null; state.selection.itemId = null; state.selection.objectId = null; renderEditor(); renderSidebar(); };
+  worldNav.onclick = () => { state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null }; renderEditor(); renderSidebar(); };
   sidebar.appendChild(worldNav);
 
   sidebar.appendChild(sectionTitle('Räume'));
@@ -159,7 +164,7 @@ function renderSidebar() {
     const item = document.createElement('div');
     item.className = 'nav-item' + (state.selection.roomId === room.id ? ' active' : '');
     item.textContent = room.title || room.id;
-    item.onclick = () => { state.selection.view = 'room'; state.selection.roomId = room.id; renderEditor(); renderSidebar(); updateAsciiPreview(room.ascii); };
+    item.onclick = () => { state.selection = { view: 'room', roomId: room.id, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null }; renderEditor(); renderSidebar(); updateAsciiPreview(room.ascii); };
     roomList.appendChild(item);
   });
   const btnNewRoom = document.createElement('button');
@@ -176,7 +181,7 @@ function renderSidebar() {
     const row = document.createElement('div');
     row.className = 'nav-item' + (state.selection.itemId === item.id ? ' active' : '');
     row.textContent = item.name || item.id;
-    row.onclick = () => { state.selection.view = 'item'; state.selection.itemId = item.id; renderEditor(); renderSidebar(); };
+    row.onclick = () => { state.selection = { view: 'item', itemId: item.id, roomId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null }; renderEditor(); renderSidebar(); };
     itemList.appendChild(row);
   });
   const btnNewItem = document.createElement('button');
@@ -193,7 +198,7 @@ function renderSidebar() {
     const row = document.createElement('div');
     row.className = 'nav-item' + (state.selection.objectId === obj.id ? ' active' : '');
     row.textContent = obj.name || obj.id;
-    row.onclick = () => { state.selection.view = 'object'; state.selection.objectId = obj.id; renderEditor(); renderSidebar(); };
+    row.onclick = () => { state.selection = { view: 'object', objectId: obj.id, roomId: null, itemId: null, npcId: null, dialogId: null, dialogNodeId: null }; renderEditor(); renderSidebar(); };
     objectList.appendChild(row);
   });
   const btnNewObject = document.createElement('button');
@@ -202,6 +207,14 @@ function renderSidebar() {
   btnNewObject.onclick = addObject;
   sidebar.appendChild(objectList);
   sidebar.appendChild(btnNewObject);
+
+  renderNpcSidebar({
+    container: sidebar,
+    state,
+    selection: state.selection,
+    onSelect: (id) => { state.selection = { view: 'npc', npcId: id, roomId: null, itemId: null, objectId: null, dialogId: null, dialogNodeId: null }; renderEditor(); renderSidebar(); },
+    onAdd: addNpc,
+  });
 }
 
 function sectionTitle(label) {
@@ -222,6 +235,10 @@ function renderEditor() {
     renderItemEditor();
   } else if (state.selection.view === 'object') {
     renderObjectEditor();
+  } else if (state.selection.view === 'npc') {
+    renderNpcView();
+  } else if (state.selection.view === 'dialog') {
+    renderDialogView();
   }
 }
 
@@ -405,6 +422,43 @@ function renderObjectEditor() {
   card.appendChild(actions);
 
   viewEl.appendChild(card);
+}
+
+function renderNpcView() {
+  const npc = (state.data.npcs || []).find(n => n.id === state.selection.npcId);
+  if (!npc) return;
+  ensureDialogForNpc(state.data, npc.id);
+  viewHeader.innerHTML = `<div class="badge"><span class="dot"></span> NPC: ${npc.id}</div>`;
+  const card = renderNpcEditor(npc, {
+    rooms: state.data.rooms || [],
+    dialogs: state.data.dialogs || {},
+    setDirty,
+    onDelete: deleteNpc,
+    onOpenDialog: (id) => {
+      ensureDialogForNpc(state.data, id);
+      state.selection = { view: 'dialog', dialogId: id, dialogNodeId: null, npcId: id, roomId: null, itemId: null, objectId: null };
+      renderEditor();
+      renderSidebar();
+    },
+  });
+  viewEl.appendChild(card);
+}
+
+function renderDialogView() {
+  const dialogId = state.selection.dialogId || state.selection.npcId;
+  if (!dialogId) return;
+  ensureDialogForNpc(state.data, dialogId);
+  renderDialogEditor({
+    container: viewEl,
+    adventure: state.data,
+    npcId: dialogId,
+    selection: state.selection,
+    setSelection: (sel) => { state.selection = { ...state.selection, ...sel }; renderEditor(); },
+    setDirty,
+    createEventEditor,
+    asciiFiles: state.asciiFiles || [],
+    items: state.data.items || [],
+  });
 }
 
 function createFieldGrid(fields) {
@@ -828,7 +882,7 @@ function addRoom() {
   const newRoom = { id, title: id, description: '', ascii: '', items: [], objects: [], exits: {}, exitMeta: {}, on_enter: [], on_first_enter: [] };
   state.data.rooms = state.data.rooms || [];
   state.data.rooms.push(newRoom);
-  state.selection = { view: 'room', roomId: id, itemId: null, objectId: null };
+  state.selection = { view: 'room', roomId: id, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -838,7 +892,7 @@ function addRoom() {
 function deleteRoom(id) {
   if (!confirm('Raum wirklich löschen?')) return;
   state.data.rooms = (state.data.rooms || []).filter(r => r.id !== id);
-  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null };
+  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -851,7 +905,7 @@ function addItem() {
   const item = { id, name: id, description: '', pickup: true, combine: {}, on_use: [] };
   state.data.items = state.data.items || [];
   state.data.items.push(item);
-  state.selection = { view: 'item', itemId: id, roomId: null, objectId: null };
+  state.selection = { view: 'item', itemId: id, roomId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -865,7 +919,7 @@ function deleteItem(id) {
     items: (room.items || []).filter(itemId => itemId !== id)
   }));
   setDirty(true);
-  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null };
+  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
   renderSidebar();
   renderEditor();
 }
@@ -876,7 +930,7 @@ function addObject() {
   const obj = { id, name: id, description: '', locked: false, use: [], on_locked_use: [], inspect: [] };
   state.data.objects = state.data.objects || [];
   state.data.objects.push(obj);
-  state.selection = { view: 'object', objectId: id, roomId: null, itemId: null };
+  state.selection = { view: 'object', objectId: id, roomId: null, itemId: null, npcId: null, dialogId: null, dialogNodeId: null };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -889,7 +943,30 @@ function deleteObject(id) {
     ...room,
     objects: (room.objects || []).filter(objId => objId !== id),
   }));
-  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null };
+  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
+  setDirty(true);
+  renderSidebar();
+  renderEditor();
+}
+
+function addNpc() {
+  ensureNpcCollection(state.data);
+  const name = prompt('Name des NPCs:');
+  if (!name) return;
+  const npc = createNpcDraft(name);
+  state.data.npcs.push(npc);
+  ensureDialogForNpc(state.data, npc.id);
+  state.selection = { view: 'npc', npcId: npc.id, roomId: null, itemId: null, objectId: null, dialogId: null, dialogNodeId: null };
+  setDirty(true);
+  renderSidebar();
+  renderEditor();
+}
+
+function deleteNpc(id) {
+  if (!confirm('NPC wirklich löschen?')) return;
+  state.data.npcs = (state.data.npcs || []).filter(n => n.id !== id);
+  if (state.data.dialogs) delete state.data.dialogs[id];
+  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -1186,6 +1263,8 @@ function applyExitLockingMetaToRooms(adventureData) {
 }
 
 function prepareAdventureForSave(data) {
+  ensureNpcCollection(data);
+  ensureDialogState(data);
   const cloned = JSON.parse(JSON.stringify(data));
   applyExitLockingMetaToRooms(cloned);
   return cloned;
@@ -1201,6 +1280,8 @@ async function saveCurrent() {
       rooms: prepared.rooms,
       items: prepared.items,
       objects: prepared.objects,
+      npcs: prepared.npcs,
+      dialogs: prepared.dialogs,
     });
     toast('Adventure gespeichert', 'success');
     setDirty(false);
