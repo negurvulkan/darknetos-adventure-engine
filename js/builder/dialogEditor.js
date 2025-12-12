@@ -1,15 +1,17 @@
 import { ensureDialogForNpc, nodeIds, renameNode, removeNode, validateDialog } from './dialogs.js';
 
-export function renderDialogEditor({ container, adventure, npcId, selection, setSelection, setDirty, createEventEditor, asciiFiles, items }) {
+export function renderDialogEditor({ container, adventure, npcId, selection, setSelection, setDirty, createEventEditor, asciiFiles, items, showHeader = true }) {
   const dialog = ensureDialogForNpc(adventure, npcId);
   const currentNodeId = selection.dialogNodeId || dialog.start;
   const node = dialog.nodes[currentNodeId];
 
   container.innerHTML = '';
-  const header = document.createElement('div');
-  header.className = 'view-header';
-  header.innerHTML = `<div class="badge"><span class="dot"></span> Dialog für ${npcId}</div>`;
-  container.appendChild(header);
+  if (showHeader) {
+    const header = document.createElement('div');
+    header.className = 'view-header';
+    header.innerHTML = `<div class="badge"><span class="dot"></span> Dialog für ${npcId}</div>`;
+    container.appendChild(header);
+  }
 
   const warns = validateDialog(dialog);
   if (warns.length) {
