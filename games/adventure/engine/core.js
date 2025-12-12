@@ -22,7 +22,9 @@ const createEmptyCache = () => ({
   rooms: {},
   items: {},
   objects: {},
-  enemies: {}
+  enemies: {},
+  npcs: {},
+  dialogs: {}
 });
 
 const createEmptyState = () => ({
@@ -33,7 +35,9 @@ const createEmptyState = () => ({
   inCombat: false,
   enemy: null,
   visited: {},
-  lockedExits: {}
+  lockedExits: {},
+  npcFlags: {},
+  dialog: { active: false, npcId: null, nodeId: null }
 });
 
 let cache = createEmptyCache();
@@ -87,6 +91,50 @@ async function loadEnemy(id) {
     cache.enemies[id] = await loadJson(`enemies/${id}.json`);
   }
   return cache.enemies[id];
+}
+
+async function loadNpc(id) {
+  if (!cache.npcs[id]) {
+    cache.npcs[id] = await loadJson(`npcs/${id}.json`);
+    if (cache.npcs[id].flags && !state.npcFlags[id]) {
+      state.npcFlags[id] = { ...cache.npcs[id].flags };
+    }
+  }
+  return cache.npcs[id];
+}
+
+async function loadDialog(npcId) {
+  if (!cache.dialogs[npcId]) {
+    cache.dialogs[npcId] = await loadJson(`dialogs/${npcId}.json`);
+  }
+  return cache.dialogs[npcId];
+}
+
+function npcVisible(npc) {
+  if (!npc) return false;
+  if (npc.hidden_if_flag && flagMatches(npc.hidden_if_flag)) return false;
+  if (npc.only_if_flag && !flagMatches(npc.only_if_flag)) return false;
+  return true;
+}
+
+async function listNpcsInRoom(roomId) {
+  const room = await loadRoom(roomId);
+  const npcIds = new Set(room.npcs || []);
+  Object.values(cache.npcs).forEach((npc) => {
+    if (npc.room && normalizeId(npc.room) === normalizeId(roomId)) {
+      npcIds.add(npc.id);
+    }
+  });
+
+  const visible = [];
+  for (const npcId of npcIds) {
+    // eslint-disable-next-line no-await-in-loop
+    const npc = await loadNpc(npcId);
+    if (npcVisible(npc)) {
+      visible.push(npc);
+    }
+  }
+  return visible;
 }
 
 function resetAdventureData(id) {
@@ -162,7 +210,9 @@ function saveState() {
       inCombat: state.inCombat,
       enemy: state.enemy,
       visited: state.visited,
-      lockedExits: state.lockedExits
+      lockedExits: state.lockedExits,
+      npcFlags: state.npcFlags,
+      dialog: state.dialog
     })
   );
 }
@@ -175,6 +225,12 @@ function loadStateFromSave() {
     const saved = JSON.parse(raw);
     state = createEmptyState();
     Object.assign(state, saved);
+    if (!state.dialog) {
+      state.dialog = { active: false, npcId: null, nodeId: null };
+    }
+    if (!state.npcFlags) {
+      state.npcFlags = {};
+    }
     return true;
   } catch (err) {
     console.error('Savegame fehlerhaft:', err);
@@ -196,6 +252,49 @@ function normalizeId(str) {
     .replace(/ö/g, "oe")
     .replace(/ü/g, "ue")
     .replace(/ß/g, "ss");
+}
+
+function findMatchByNormalized(list = [], query = '') {
+  const normalizedQuery = normalizeId(query);
+  if (!normalizedQuery) return null;
+  const exact = list.find((id) => normalizeId(id) === normalizedQuery);
+  if (exact) return exact;
+  return list.find((id) => normalizeId(id).includes(normalizedQuery)) || null;
+}
+
+function flagMatches(condition) {
+  if (!condition || !condition.key) return true;
+  return state.flags[condition.key] === condition.equals;
+}
+
+function inventoryMatches(list = []) {
+  if (!Array.isArray(list) || !list.length) return true;
+  return list.every((itemId) => state.inventory.includes(itemId));
+}
+
+function choiceHidden(choice = {}) {
+  const condition = choice.hidden_if;
+  if (!condition) return false;
+  const inventoryHidden = condition.inventory && !inventoryMatches(condition.inventory);
+  const flagHidden = condition.flag && !flagMatches(condition.flag);
+  return inventoryHidden || flagHidden;
+}
+
+function choiceAllowed(choice = {}) {
+  const req = choice.requires;
+  if (!req) return true;
+  if (req.inventory && !inventoryMatches(req.inventory)) return false;
+  if (req.flag && !flagMatches(req.flag)) return false;
+  return true;
+}
+
+function buildVisibleChoices(node = {}) {
+  const visible = [];
+  (node.choices || []).forEach((choice) => {
+    if (choiceHidden(choice)) return;
+    visible.push({ choice, locked: !choiceAllowed(choice) });
+  });
+  return visible;
 }
 
 function describeInventory() {
@@ -232,6 +331,10 @@ async function showRoom(firstTime = false) {
   if (room.objects && room.objects.length) {
     lines.push('Objekte: ' + room.objects.join(', '));
   }
+  const npcsInRoom = await listNpcsInRoom(room.id);
+  if (npcsInRoom.length) {
+    lines.push('Personen: ' + npcsInRoom.map((n) => n.name || n.id).join(', '));
+  }
   const exits = Object.keys(room.exits || {});
   if (exits.length) {
     lines.push('Ausgänge: ' + exits.join(', '));
@@ -251,7 +354,11 @@ function ctxForEvents() {
     saveState,
     showCurrentRoom: async (first = false) => showRoom(first),
     startCombat: async (enemyId) => startCombat(enemyId, state, ctxForEvents()),
-    loadEnemy
+    loadEnemy,
+    startDialog: async (npcId, nodeId = null) => startDialogWithNpc(npcId, nodeId),
+    endDialog: () => endDialog(),
+    gotoDialogNode: async (nodeId) => gotoDialogNode(nodeId),
+    showDialogNode: async () => showDialogNode()
   };
 }
 
@@ -281,21 +388,8 @@ async function performTake(action) {
       advLog([cache.world.messages.unknownCommand]);
       return;
     }
-  const rawObj = (action.object || '').toLowerCase();
   const available = room.items || [];
-  
-  // 1. exakte Matches bevorzugen
-  let match = available.find(id => id.toLowerCase() === rawObj);
-  
-  // 2. sonst "enthält"-Match
-  if (!match) {
-    match = available.find(id => id.toLowerCase().includes(rawObj));
-  }
-
-  if (!match) {
-    advLog([cache.world.messages.cannotTake]);
-    return;
-  }
+  const match = findMatchByNormalized(available, action.object);
 
   if (!match) {
     advLog([cache.world.messages.cannotTake]);
@@ -323,9 +417,8 @@ async function performInspect(action) {
     return;
   }
 
-  const objId = (action.object || '').replace(/\s+/g, '_');
   const candidates = (room.objects || []).concat(room.items || []);
-  const match = candidates.find((id) => id.toLowerCase().includes(objId));
+  const match = findMatchByNormalized(candidates, action.object);
   if (!match) {
     advLog(['Nichts Besonderes.']);
     return;
@@ -348,8 +441,7 @@ async function performUse(action) {
     advLog([cache.world.messages.unknownCommand]);
     return;
   }
-  const id = (action.object || '').replace(/\s+/g, '_');
-  const onObject = (room.objects || []).find((o) => o.toLowerCase().includes(id));
+  const onObject = findMatchByNormalized(room.objects || [], action.object);
   if (onObject) {
     const obj = await loadObject(onObject);
     if (obj.locked) {
@@ -359,7 +451,7 @@ async function performUse(action) {
     await runEvents(obj.use || [], state, ctxForEvents());
     return;
   }
-  const itemMatch = state.inventory.find((i) => i.toLowerCase().includes(id));
+  const itemMatch = findMatchByNormalized(state.inventory, action.object);
   if (itemMatch) {
     const item = await loadItem(itemMatch);
     await runEvents(item.on_use || [], state, ctxForEvents());
@@ -369,9 +461,9 @@ async function performUse(action) {
 }
 
 async function performCombine(action) {
-  const sourceId = (action.object || '').replace(/\s+/g, '_');
-  const targetId = (action.target || '').replace(/\s+/g, '_');
-  const match = state.inventory.find((i) => i.toLowerCase().includes(sourceId));
+  const sourceId = normalizeId(action.object || '');
+  const targetId = normalizeId(action.target || '');
+  const match = findMatchByNormalized(state.inventory, action.object);
   if (!match) {
     advLog(['Dir fehlt ein benötigtes Item.']);
     return;
@@ -383,6 +475,157 @@ async function performCombine(action) {
     return;
   }
   await runEvents(combination, state, ctxForEvents());
+}
+
+async function performTalk(action) {
+  const npcs = await listNpcsInRoom(state.location);
+  if (!npcs.length) {
+    dialogLog(['Niemand antwortet.']);
+    return;
+  }
+
+  let target = null;
+  if (action.object) {
+    const normalized = normalizeId(action.object);
+    target = npcs.find(
+      (npc) => normalizeId(npc.id) === normalized || normalizeId(npc.name || '').includes(normalized)
+    );
+  }
+
+  if (!target) {
+    target = npcs.length === 1 ? npcs[0] : null;
+  }
+
+  if (!target) {
+    dialogLog(['Niemand antwortet.']);
+    return;
+  }
+
+  await startDialogWithNpc(target.id, target.dialog_start);
+}
+
+function dialogLog(lines = [], cls) {
+  if (typeof advLog === 'function') {
+    advLog(lines, cls);
+  } else if (typeof printLines === 'function') {
+    const payload = Array.isArray(lines) ? lines : [String(lines)];
+    printLines(payload, cls);
+  }
+}
+
+function endDialog(showMessage = false) {
+  if (!state.dialog.active) return;
+  state.dialog = { active: false, npcId: null, nodeId: null };
+  saveState();
+  if (showMessage) {
+    dialogLog(['(Dialog beendet)']);
+  }
+}
+
+async function showDialogNode() {
+  if (!state.dialog.active) return;
+  ensureAdventureUI();
+  const npc = await loadNpc(state.dialog.npcId);
+  const dialog = await loadDialog(state.dialog.npcId);
+  const nodeId = state.dialog.nodeId || dialog.start || npc.dialog_start || 'start';
+  const node = dialog.nodes ? dialog.nodes[nodeId] : null;
+  if (!node) {
+    dialogLog(['(Dialog konnte nicht geladen werden.)']);
+    endDialog();
+    return;
+  }
+
+  state.dialog.nodeId = nodeId;
+  saveState();
+
+  if (node.ascii) {
+    await loadAscii(node.ascii);
+  }
+
+  const visibleChoices = buildVisibleChoices(node);
+  const lines = [];
+  lines.push(`— ${npc.name || npc.id} —`);
+  if (node.text) {
+    lines.push(node.text);
+  }
+  if (visibleChoices.length) {
+    visibleChoices.forEach(({ choice, locked }, idx) => {
+      let label = `${idx + 1}. ${choice.text}`;
+      if (locked) {
+        label += ' [X]';
+      }
+      lines.push(label);
+    });
+  }
+  lines.push('');
+  if (visibleChoices.length) {
+    lines.push(`Wähle 1-${visibleChoices.length} oder tippe 'abbrechen'.`);
+  } else {
+    lines.push("Tippe 'abbrechen', um den Dialog zu schließen.");
+  }
+  lines.push('');
+
+  dialogLog(lines);
+}
+
+async function handleDialogChoice(index) {
+  if (!state.dialog.active) return;
+  const dialog = await loadDialog(state.dialog.npcId);
+  const npc = await loadNpc(state.dialog.npcId);
+  const nodeId = state.dialog.nodeId || dialog.start || npc.dialog_start || 'start';
+  const node = dialog.nodes ? dialog.nodes[nodeId] : null;
+  if (!node) {
+    endDialog();
+    return;
+  }
+  const visibleChoices = buildVisibleChoices(node);
+  const selected = visibleChoices[index - 1];
+  if (!selected) {
+    dialogLog(['Bitte eine gültige Zahl wählen.']);
+    return;
+  }
+
+  if (selected.locked) {
+    dialogLog(['Das kannst du gerade nicht.']);
+    await showDialogNode();
+    return;
+  }
+
+  if (selected.choice.ascii) {
+    await loadAscii(selected.choice.ascii);
+  }
+
+  if (Array.isArray(selected.choice.events) && selected.choice.events.length) {
+    await runEvents(selected.choice.events, state, ctxForEvents());
+  }
+
+  if (!state.dialog.active) return;
+
+  const nextNode = selected.choice.next || dialog.start || npc.dialog_start;
+  if (nextNode === 'end' || !dialog.nodes?.[nextNode]) {
+    endDialog();
+    return;
+  }
+
+  state.dialog.nodeId = nextNode;
+  saveState();
+  await showDialogNode();
+}
+
+async function startDialogWithNpc(npcId, nodeId = null) {
+  const npc = await loadNpc(npcId);
+  const dialog = await loadDialog(npc.id);
+  const startNode = nodeId || dialog.start || npc.dialog_start || 'start';
+  state.dialog = { active: true, npcId: npc.id, nodeId: startNode };
+  saveState();
+  await showDialogNode();
+}
+
+async function gotoDialogNode(nodeId) {
+  if (!state.dialog.active) return;
+  state.dialog.nodeId = nodeId;
+  saveState();
+  await showDialogNode();
 }
 
 async function handleAction(action) {
@@ -417,6 +660,9 @@ async function handleAction(action) {
     case 'pull':
       await performUse(action);
       break;
+    case 'talk':
+      await performTalk(action);
+      break;
     case 'combine':
       await performCombine(action);
       break;
@@ -444,6 +690,7 @@ function printHelp() {
     '- Bewegung: geh nord/ost/sued/west oder n/s/o/w',
     '- nimm <item>, untersuche <objekt>',
     '- benutze <objekt|item>',
+    '- sprich mit <person>',
     '- kombiniere <item> mit <anderes>',
     '- inventar, hilfe',
     '- exit oder quit beendet das Adventure'
@@ -486,6 +733,11 @@ export const adventure = {
     }
     ensureAdventureUI();
     advLog(['Lade letzten Spielstand...']);
+    if (state.dialog.active) {
+      dialogLog(['(Dialog fortgesetzt)']);
+      await showDialogNode();
+      return;
+    }
     await showRoom(!state.visited[state.location]);
   },
   async reset(adventureId) {
@@ -499,6 +751,29 @@ export const adventure = {
     await adventure.start(adventureId);
   },
   async handleInput(text) {
+    if (state.dialog?.active) {
+      const trimmed = (text || '').trim();
+      const normalized = normalizeId(trimmed);
+      if (!trimmed) {
+        dialogLog(["Zahl wählen oder 'abbrechen'."]);
+        return;
+      }
+      if (['abbrechen', 'exit', 'bye', 'quit'].includes(normalized)) {
+        endDialog(true);
+        return;
+      }
+      if (/^\d+$/.test(trimmed)) {
+        const num = Number.parseInt(trimmed, 10);
+        if (num >= 1 && num <= 99) {
+          await handleDialogChoice(num);
+        } else {
+          dialogLog(['Bitte eine gültige Zahl wählen.']);
+        }
+        return;
+      }
+      dialogLog(["Zahl wählen oder 'abbrechen'."]);
+      return;
+    }
     if (!cache.world) {
       try {
         await ensureAdventure();

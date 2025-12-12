@@ -5,6 +5,7 @@
   "exits": { "sued": "verkuemmertes_moor" },
   "objects": [],
   "items": ["verblasster_brief"],
+  "npcs": ["torwaechter"],
   "enemies": [],
   "on_enter": [],
   "on_first_enter": []
