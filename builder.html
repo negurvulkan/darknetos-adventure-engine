@@ -49,6 +49,17 @@
     <div class="toast"></div>
   </template>
 
+  <div id="modal" class="modal">
+    <div class="modal-backdrop" data-close></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modal-title">Block-Editor</h3>
+        <button id="modal-close" class="icon-button" aria-label="Schließen">×</button>
+      </div>
+      <div id="modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/blockly/blockly.min.js"></script>
   <script type="module" src="js/builder/main.js"></script>
 </body>

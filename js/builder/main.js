@@ -19,6 +19,10 @@ const viewHeader = document.getElementById('view-header');
 const sidebar = document.getElementById('sidebar-content');
 const mapView = document.getElementById('map-view');
 const asciiPreview = document.getElementById('ascii-preview');
+const modalEl = document.getElementById('modal');
+const modalTitle = document.getElementById('modal-title');
+const modalBody = document.getElementById('modal-body');
+const modalClose = document.getElementById('modal-close');
 
 function isFiniteNumber(val) {
   return typeof val === 'number' && Number.isFinite(val);
@@ -36,11 +40,32 @@ function toast(message, type = 'info') {
   setTimeout(() => node.remove(), 4000);
 }
 
+function closeModal() {
+  modalEl.classList.remove('open');
+  modalBody.innerHTML = '';
+}
+
+function openModal(title, contentNode, onOpen) {
+  modalTitle.textContent = title;
+  modalBody.innerHTML = '';
+  if (contentNode) modalBody.appendChild(contentNode);
+  modalEl.classList.add('open');
+  if (onOpen) window.setTimeout(onOpen, 0);
+}
+
 function setDirty(flag = true) {
   state.dirty = flag;
   const btn = document.getElementById('btn-save');
   btn.textContent = flag ? 'Speichern*' : 'Speichern';
 }
+
+modalClose.addEventListener('click', closeModal);
+modalEl.addEventListener('click', (ev) => {
+  if (ev.target === modalEl || ev.target.dataset.close !== undefined) closeModal();
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && modalEl.classList.contains('open')) closeModal();
+});
 
 function init() {
   $('#btn-dashboard').addEventListener('click', renderDashboard);
@@ -738,16 +763,31 @@ function createEventEditor(initialValue, onChange) {
 
   editor.workspace.addChangeListener(() => syncBlocksToJson(true));
 
+  const blockLauncher = document.createElement('div');
+  blockLauncher.className = 'blockly-modal-launcher';
+  const blockHint = document.createElement('p');
+  blockHint.textContent = 'Öffne den Blockly-Editor im Modal, um Events per Drag & Drop zusammenzustellen.';
+  const openBlocksBtn = document.createElement('button');
+  openBlocksBtn.type = 'button';
+  openBlocksBtn.textContent = 'Blockly-Editor öffnen';
+  openBlocksBtn.onclick = () => {
+    syncJsonToBlocks();
+    openModal('Event Blockly Editor', blockHost, () => {
+      if (window.Blockly?.svgResize) {
+        window.Blockly.svgResize(editor.workspace);
+        editor.workspace.scrollCenter();
+      }
+    });
+  };
+  blockLauncher.append(blockHint, openBlocksBtn);
+
   let activeTab = 'blocks';
   const setTab = (tab) => {
     activeTab = tab;
     tabBlocks.classList.toggle('active', tab === 'blocks');
     tabJson.classList.toggle('active', tab === 'json');
-    blockHost.style.display = tab === 'blocks' ? 'block' : 'none';
+    blockLauncher.style.display = tab === 'blocks' ? 'block' : 'none';
     jsonArea.style.display = tab === 'json' ? 'block' : 'none';
-    if (tab === 'blocks' && window.Blockly?.svgResize) {
-      window.Blockly.svgResize(editor.workspace);
-    }
   };
 
   tabBlocks.onclick = () => {
@@ -765,7 +805,7 @@ function createEventEditor(initialValue, onChange) {
   jsonArea.onchange = () => syncJsonToBlocks();
 
   setTab('blocks');
-  container.append(tabs, blockHost, jsonArea);
+  container.append(tabs, blockLauncher, jsonArea);
   return container;
 }
 
