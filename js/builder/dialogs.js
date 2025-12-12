@@ -10,6 +10,8 @@ export function ensureDialogForNpc(data, npcId) {
   }
   const dlg = data.dialogs[npcId];
   dlg.nodes = dlg.nodes || {};
+  dlg.meta = dlg.meta || {};
+  dlg.meta.positions = dlg.meta.positions || {};
   if (!dlg.nodes[dlg.start]) {
     dlg.nodes[dlg.start || 'start'] = { text: '', choices: [] };
     dlg.start = dlg.start || 'start';
@@ -76,6 +78,33 @@ export function validateDialog(dialog) {
     });
   });
   return warnings;
+}
+
+export function dialogGraphInfo(dialog) {
+  const ids = nodeIds(dialog);
+  const reachable = new Set();
+  const missingTargets = [];
+
+  if (dialog.start && dialog.nodes?.[dialog.start]) {
+    const queue = [dialog.start];
+    while (queue.length) {
+      const current = queue.shift();
+      if (reachable.has(current)) continue;
+      reachable.add(current);
+      const node = dialog.nodes[current];
+      (node?.choices || []).forEach((choice, idx) => {
+        if (!choice.next || choice.next === 'end') return;
+        if (!dialog.nodes[choice.next]) {
+          missingTargets.push({ from: current, index: idx, target: choice.next });
+          return;
+        }
+        if (!reachable.has(choice.next)) queue.push(choice.next);
+      });
+    }
+  }
+
+  const unreachable = ids.filter(id => !reachable.has(id));
+  return { reachable, unreachable, missingTargets };
 }
 
 function normalizeChoice(choice) {

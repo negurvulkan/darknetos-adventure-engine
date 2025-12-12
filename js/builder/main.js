@@ -1,17 +1,19 @@
 import { Api } from './api.js';
 import { initEventBlockEditor } from './event-blockly.js';
 import { renderNpcSidebar, renderNpcEditor, ensureNpcCollection, createNpcDraft } from './npcs.js';
-import { ensureDialogState, ensureDialogForNpc } from './dialogs.js';
+import { dialogGraphInfo, ensureDialogState, ensureDialogForNpc, nodeIds } from './dialogs.js';
 import { renderDialogEditor } from './dialogEditor.js';
+import { autoLayout, renderDialogMap } from './dialogMap.js';
 
 const state = {
   adventures: [],
   currentAdventure: null,
   data: null,
   dirty: false,
-  selection: { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null },
+  selection: { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' },
   asciiFiles: [],
   map: { scale: 1, x: 0, y: 0 },
+  dialogMaps: {},
 };
 
 const viewEl = document.getElementById('view');
@@ -161,7 +163,7 @@ async function openAdventure(id) {
     ensureNpcCollection(state.data);
     ensureDialogState(state.data);
     state.asciiFiles = res.ascii || res.asciiFiles || [];
-    state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
+    state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' };
     state.map = { scale: 1, x: 0, y: 0 };
     setDirty(false);
     renderEditor();
@@ -179,7 +181,7 @@ function renderSidebar() {
   const worldNav = document.createElement('div');
   worldNav.className = 'nav-item' + (state.selection.view === 'world' ? ' active' : '');
   worldNav.textContent = 'World & Game';
-  worldNav.onclick = () => { state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null }; renderEditor(); renderSidebar(); };
+  worldNav.onclick = () => { state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' }; renderEditor(); renderSidebar(); };
   sidebar.appendChild(worldNav);
 
   sidebar.appendChild(sectionTitle('Räume'));
@@ -189,7 +191,7 @@ function renderSidebar() {
     const item = document.createElement('div');
     item.className = 'nav-item' + (state.selection.roomId === room.id ? ' active' : '');
     item.textContent = room.title || room.id;
-    item.onclick = () => { state.selection = { view: 'room', roomId: room.id, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null }; renderEditor(); renderSidebar(); updateAsciiPreview(room.ascii); };
+    item.onclick = () => { state.selection = { view: 'room', roomId: room.id, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' }; renderEditor(); renderSidebar(); updateAsciiPreview(room.ascii); };
     roomList.appendChild(item);
   });
   const btnNewRoom = document.createElement('button');
@@ -206,7 +208,7 @@ function renderSidebar() {
     const row = document.createElement('div');
     row.className = 'nav-item' + (state.selection.itemId === item.id ? ' active' : '');
     row.textContent = item.name || item.id;
-    row.onclick = () => { state.selection = { view: 'item', itemId: item.id, roomId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null }; renderEditor(); renderSidebar(); };
+    row.onclick = () => { state.selection = { view: 'item', itemId: item.id, roomId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' }; renderEditor(); renderSidebar(); };
     itemList.appendChild(row);
   });
   const btnNewItem = document.createElement('button');
@@ -223,7 +225,7 @@ function renderSidebar() {
     const row = document.createElement('div');
     row.className = 'nav-item' + (state.selection.objectId === obj.id ? ' active' : '');
     row.textContent = obj.name || obj.id;
-    row.onclick = () => { state.selection = { view: 'object', objectId: obj.id, roomId: null, itemId: null, npcId: null, dialogId: null, dialogNodeId: null }; renderEditor(); renderSidebar(); };
+    row.onclick = () => { state.selection = { view: 'object', objectId: obj.id, roomId: null, itemId: null, npcId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' }; renderEditor(); renderSidebar(); };
     objectList.appendChild(row);
   });
   const btnNewObject = document.createElement('button');
@@ -237,7 +239,7 @@ function renderSidebar() {
     container: sidebar,
     state,
     selection: state.selection,
-    onSelect: (id) => { state.selection = { view: 'npc', npcId: id, roomId: null, itemId: null, objectId: null, dialogId: null, dialogNodeId: null }; renderEditor(); renderSidebar(); },
+    onSelect: (id) => { state.selection = { view: 'npc', npcId: id, roomId: null, itemId: null, objectId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' }; renderEditor(); renderSidebar(); },
     onAdd: addNpc,
   });
 }
@@ -461,7 +463,7 @@ function renderNpcView() {
     onDelete: deleteNpc,
     onOpenDialog: (id) => {
       ensureDialogForNpc(state.data, id);
-      state.selection = { view: 'dialog', dialogId: id, dialogNodeId: null, npcId: id, roomId: null, itemId: null, objectId: null };
+      state.selection = { view: 'dialog', dialogId: id, dialogNodeId: null, npcId: id, roomId: null, itemId: null, objectId: null, dialogMode: 'editor' };
       renderEditor();
       renderSidebar();
     },
@@ -472,18 +474,202 @@ function renderNpcView() {
 function renderDialogView() {
   const dialogId = state.selection.dialogId || state.selection.npcId;
   if (!dialogId) return;
-  ensureDialogForNpc(state.data, dialogId);
-  renderDialogEditor({
-    container: viewEl,
-    adventure: state.data,
-    npcId: dialogId,
-    selection: state.selection,
-    setSelection: (sel) => { state.selection = { ...state.selection, ...sel }; renderEditor(); },
-    setDirty,
-    createEventEditor,
-    asciiFiles: state.asciiFiles || [],
-    items: state.data.items || [],
+  const dialog = ensureDialogForNpc(state.data, dialogId);
+  const mode = state.selection.dialogMode || 'editor';
+  const graph = dialogGraphInfo(dialog);
+
+  viewHeader.innerHTML = '';
+  const badge = document.createElement('div');
+  badge.className = 'badge';
+  badge.innerHTML = `<span class="dot"></span> Dialog: ${dialogId}`;
+  viewHeader.appendChild(badge);
+
+  const tabs = document.createElement('div');
+  tabs.className = 'dialog-tabs';
+  const btnEditor = document.createElement('button');
+  btnEditor.className = mode === 'editor' ? 'primary' : 'ghost';
+  btnEditor.textContent = 'Dialog Editor';
+  btnEditor.onclick = () => { state.selection = { ...state.selection, dialogMode: 'editor' }; renderEditor(); };
+  const btnMap = document.createElement('button');
+  btnMap.className = mode === 'map' ? 'primary' : 'ghost';
+  btnMap.textContent = 'Dialog Map';
+  btnMap.onclick = () => { state.selection = { ...state.selection, dialogMode: 'map' }; renderEditor(); };
+  tabs.append(btnEditor, btnMap);
+  viewHeader.appendChild(tabs);
+
+  const actions = document.createElement('div');
+  actions.className = 'dialog-actions';
+  const warnLabel = document.createElement('div');
+  warnLabel.className = 'dialog-warnings';
+  warnLabel.textContent = `${graph.unreachable.length} unreachable · ${graph.missingTargets.length} fehlende Ziele`;
+  actions.appendChild(warnLabel);
+
+  if (mode === 'map') {
+    const btnLayout = document.createElement('button');
+    btnLayout.className = 'ghost';
+    btnLayout.textContent = 'Auto-Layout';
+    btnLayout.onclick = () => {
+      autoLayout(dialog, dialog.meta.positions);
+      setDirty(true);
+      renderDialogView();
+    };
+    actions.appendChild(btnLayout);
+  }
+  viewHeader.appendChild(actions);
+
+  viewEl.innerHTML = '';
+  if (mode === 'map') {
+    const mapState = state.dialogMaps[dialogId] || { scale: 1, x: 0, y: 0 };
+    state.dialogMaps[dialogId] = mapState;
+    renderDialogMap({
+      container: viewEl,
+      dialog,
+      setDirty,
+      mapState,
+      onMapStateChange: (next) => { state.dialogMaps[dialogId] = next; },
+      onSelectNode: (id) => { state.selection = { ...state.selection, dialogNodeId: id, dialogMode: 'editor' }; renderEditor(); },
+      onEditChoice: (fromId, idx) => openChoiceEditor(dialog, fromId, idx),
+    });
+    appendDialogWarnings(viewEl, graph);
+  } else {
+    renderDialogEditor({
+      container: viewEl,
+      adventure: state.data,
+      npcId: dialogId,
+      selection: state.selection,
+      setSelection: (sel) => { state.selection = { ...state.selection, ...sel }; renderEditor(); },
+      setDirty,
+      createEventEditor,
+      asciiFiles: state.asciiFiles || [],
+      items: state.data.items || [],
+      showHeader: false,
+    });
+  }
+}
+
+function appendDialogWarnings(container, graph) {
+  if (!graph.unreachable.length && !graph.missingTargets.length) return;
+  const warn = document.createElement('div');
+  warn.className = 'card warning';
+  const list = [];
+  if (graph.unreachable.length) list.push(`Unreachable: ${graph.unreachable.join(', ')}`);
+  if (graph.missingTargets.length) list.push(`Fehlende Ziele: ${graph.missingTargets.map(m => `${m.from} → ${m.target || '???'}`).join(', ')}`);
+  warn.innerHTML = `<strong>Hinweis:</strong> ${list.join(' · ')}`;
+  container.appendChild(warn);
+}
+
+function openChoiceEditor(dialog, nodeId, idx) {
+  const node = dialog.nodes?.[nodeId];
+  if (!node || !node.choices[idx]) return;
+  const choice = node.choices[idx];
+  choice.requires = choice.requires || { items: [], flag: null };
+  choice.hidden_if = choice.hidden_if || { items: [], flag: null };
+  choice.events = choice.events || [];
+
+  const wrap = document.createElement('div');
+  wrap.className = 'choice-modal';
+
+  wrap.appendChild(simpleField('Antwort-Text', choice.text || '', (v) => { choice.text = v; setDirty(true); }));
+
+  const nextSelect = document.createElement('select');
+  const opts = nodeIds(dialog).concat('end');
+  opts.forEach(id => {
+    const opt = document.createElement('option');
+    opt.value = id;
+    opt.textContent = id;
+    if (id === choice.next) opt.selected = true;
+    nextSelect.appendChild(opt);
   });
+  nextSelect.onchange = () => { choice.next = nextSelect.value; setDirty(true); };
+  wrap.appendChild(labeled('Ziel', nextSelect));
+
+  wrap.appendChild(createGateEditor('Bedingungen', choice.requires));
+  wrap.appendChild(createGateEditor('Verstecken wenn', choice.hidden_if));
+
+  const eventWrap = document.createElement('div');
+  const btn = document.createElement('button');
+  btn.textContent = '🧩 Events bearbeiten';
+  btn.onclick = () => {
+    eventWrap.innerHTML = '';
+    const editor = createEventEditor(choice.events || [], (val) => { choice.events = val; setDirty(true); });
+    eventWrap.appendChild(editor);
+  };
+  wrap.appendChild(btn);
+  wrap.appendChild(eventWrap);
+
+  openModal('Choice bearbeiten', wrap);
+}
+
+function createGateEditor(label, gate) {
+  const card = document.createElement('div');
+  card.className = 'card gate-card';
+  const title = document.createElement('div');
+  title.className = 'panel-header';
+  title.textContent = label;
+  card.appendChild(title);
+
+  const itemSelect = document.createElement('select');
+  itemSelect.multiple = true;
+  (state.data.items || []).forEach(item => {
+    const opt = document.createElement('option');
+    opt.value = item.id;
+    opt.textContent = item.name || item.id;
+    if (gate.items?.includes(item.id)) opt.selected = true;
+    itemSelect.appendChild(opt);
+  });
+  itemSelect.onchange = () => {
+    gate.items = Array.from(itemSelect.selectedOptions).map(o => o.value);
+    setDirty(true);
+  };
+  card.appendChild(labeled('Benötigte Items', itemSelect));
+
+  const flagWrap = document.createElement('div');
+  flagWrap.className = 'flag-editor';
+  const keyInput = document.createElement('input');
+  keyInput.value = gate.flag?.key || '';
+  keyInput.placeholder = 'flag-key';
+  keyInput.oninput = () => {
+    gate.flag = gate.flag || { key: '', equals: true };
+    gate.flag.key = keyInput.value;
+    if (!gate.flag.key) gate.flag = null;
+    setDirty(true);
+  };
+  const equals = document.createElement('input');
+  equals.type = 'checkbox';
+  equals.checked = gate.flag?.equals !== false;
+  equals.onchange = () => {
+    gate.flag = gate.flag || { key: keyInput.value, equals: true };
+    gate.flag.equals = equals.checked;
+    if (!gate.flag.key) gate.flag = null;
+    setDirty(true);
+  };
+  flagWrap.appendChild(labeled('Flag-Key', keyInput));
+  const eqLabel = document.createElement('label');
+  eqLabel.className = 'checkbox-inline';
+  eqLabel.appendChild(equals);
+  eqLabel.appendChild(document.createTextNode('Equals true'));
+  flagWrap.appendChild(eqLabel);
+  card.appendChild(flagWrap);
+
+  return card;
+}
+
+function labeled(label, node) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field';
+  const l = document.createElement('label');
+  l.textContent = label;
+  wrap.appendChild(l);
+  wrap.appendChild(node);
+  return wrap;
+}
+
+function simpleField(label, value, onChange) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = value;
+  input.oninput = () => onChange(input.value);
+  return labeled(label, input);
 }
 
 function createFieldGrid(fields) {
@@ -922,7 +1108,7 @@ function addRoom() {
   const newRoom = { id, title: id, description: '', ascii: '', items: [], objects: [], exits: {}, exitMeta: {}, on_enter: [], on_first_enter: [] };
   state.data.rooms = state.data.rooms || [];
   state.data.rooms.push(newRoom);
-  state.selection = { view: 'room', roomId: id, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
+  state.selection = { view: 'room', roomId: id, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -932,7 +1118,7 @@ function addRoom() {
 function deleteRoom(id) {
   if (!confirm('Raum wirklich löschen?')) return;
   state.data.rooms = (state.data.rooms || []).filter(r => r.id !== id);
-  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
+  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -945,7 +1131,7 @@ function addItem() {
   const item = { id, name: id, description: '', pickup: true, combine: {}, on_use: [] };
   state.data.items = state.data.items || [];
   state.data.items.push(item);
-  state.selection = { view: 'item', itemId: id, roomId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
+  state.selection = { view: 'item', itemId: id, roomId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -959,7 +1145,7 @@ function deleteItem(id) {
     items: (room.items || []).filter(itemId => itemId !== id)
   }));
   setDirty(true);
-  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
+  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' };
   renderSidebar();
   renderEditor();
 }
@@ -970,7 +1156,7 @@ function addObject() {
   const obj = { id, name: id, description: '', locked: false, use: [], on_locked_use: [], inspect: [] };
   state.data.objects = state.data.objects || [];
   state.data.objects.push(obj);
-  state.selection = { view: 'object', objectId: id, roomId: null, itemId: null, npcId: null, dialogId: null, dialogNodeId: null };
+  state.selection = { view: 'object', objectId: id, roomId: null, itemId: null, npcId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -983,7 +1169,7 @@ function deleteObject(id) {
     ...room,
     objects: (room.objects || []).filter(objId => objId !== id),
   }));
-  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
+  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -996,7 +1182,7 @@ function addNpc() {
   const npc = createNpcDraft(name);
   state.data.npcs.push(npc);
   ensureDialogForNpc(state.data, npc.id);
-  state.selection = { view: 'npc', npcId: npc.id, roomId: null, itemId: null, objectId: null, dialogId: null, dialogNodeId: null };
+  state.selection = { view: 'npc', npcId: npc.id, roomId: null, itemId: null, objectId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' };
   setDirty(true);
   renderSidebar();
   renderEditor();
@@ -1006,7 +1192,7 @@ function deleteNpc(id) {
   if (!confirm('NPC wirklich löschen?')) return;
   state.data.npcs = (state.data.npcs || []).filter(n => n.id !== id);
   if (state.data.dialogs) delete state.data.dialogs[id];
-  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null };
+  state.selection = { view: 'world', roomId: null, itemId: null, objectId: null, npcId: null, dialogId: null, dialogNodeId: null, dialogMode: 'editor' };
   setDirty(true);
   renderSidebar();
   renderEditor();
