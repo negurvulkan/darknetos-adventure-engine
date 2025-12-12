@@ -12,6 +12,7 @@ const VERB_SYNONYMS = {
   pull: ['ziehe', 'pull'],
   attack: ['angriff', 'angreifen', 'attack', 'schlag', 'kämpfe', 'kaempfe'],
   combine: ['kombiniere', 'combine'],
+  talk: ['rede', 'rede mit', 'sprich', 'sprich mit', 'spreche', 'talk', 'dialog'],
   inventory: ['inventar', 'tasche', 'beutel', 'i', 'inv', 'rucksack'],
   help: ['hilfe', 'help'],
   exit: ['exit', 'quit', 'beenden', 'verlassen']
@@ -27,6 +28,17 @@ const DIRECTION_ALIASES = {
   ost: 'ost',
   west: 'west'
 };
+
+function normalizeUmlauts(str = '') {
+  return str
+    .toLowerCase()
+    .replace(/ä/g, 'ae')
+    .replace(/ö/g, 'oe')
+    .replace(/ü/g, 'ue')
+    .replace(/ß/g, 'ss')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function normalizeVerb(input) {
   for (const [verb, list] of Object.entries(VERB_SYNONYMS)) {
@@ -50,7 +62,7 @@ function parseDirection(word) {
  */
 export function parseInput(text) {
   const raw = text;
-  const lower = text.trim().toLowerCase();
+  const lower = normalizeUmlauts(text);
 
   // Leerer String
   if (!lower) {
@@ -118,6 +130,9 @@ export function parseInput(text) {
     }
   } else {
     object = tokens.slice(1).join(' ');
+    if (verb === 'talk' && object.startsWith('mit ')) {
+      object = object.replace(/^mit\s+/, '');
+    }
   }
 
   return { verb, object: object || null, target, direction, raw };

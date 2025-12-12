@@ -69,6 +69,23 @@ async function handleEvent(event, state, ctx) {
     case 'trigger_fight':
       await ctx.startCombat(event.enemy);
       break;
+    case 'start_dialog':
+      if (ctx.startDialog) {
+        await ctx.startDialog(event.npc, event.node);
+      } else {
+        advLog(['Dialog kann nicht gestartet werden.']);
+      }
+      break;
+    case 'end_dialog':
+      if (ctx.endDialog) {
+        ctx.endDialog();
+      }
+      break;
+    case 'goto_dialog_node':
+      if (ctx.gotoDialogNode) {
+        await ctx.gotoDialogNode(event.node);
+      }
+      break;
     default:
       advLog([`Unbekanntes Event: ${event.type || 'unbenannt'}`]);
   }

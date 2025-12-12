@@ -28,7 +28,8 @@ export async function loadJson(path) {
  */
 export async function loadAscii(asciiConfig) {
   const file = typeof asciiConfig === 'string' ? asciiConfig : asciiConfig.file;
-  const fontSize = typeof asciiConfig === 'object' ? asciiConfig.fontSize : undefined;
+  const fontSize =
+    typeof asciiConfig === 'object' ? asciiConfig.fontSize || asciiConfig.size : undefined;
   const url = buildDataUrl(file);
   const res = await fetch(url);
   if (!res.ok) {
